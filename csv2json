@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+
+import sys
+import json
+import itertools
+
+def segment(k):
+    a,b=itertools.tee(k)
+    next(b,None)
+    return zip(a,b)
+
+def pair(k):
+    j=iter(k)
+    return zip(j,j)
+
+def findall(a,b):
+    i=0
+    while i<len(a):
+        k=a.find(b,i)
+        if k>=0:
+            yield k
+            i=k+1
+        else:
+            return
+
+def main():
+    column={}
+    save=[]
+    rc=10
+    try:
+        with open(sys.argv[1],'rt') if len(sys.argv)>1 else sys.stdin as t:
+            for l,line in enumerate(t):
+                if not l:
+                    heading=line.split(',')
+                    column=dict(zip(
+                            range(len(heading)),
+                            map(lambda k:k.lower()
+                                .replace(' ','_')
+                                .strip('\'\n'),heading)
+                        ))
+                else:
+                    c=list(findall(line,','))
+                    q=list(findall(line,'"'))
+                    r=list(map(
+                        lambda k:line[k[0]:k[1]].lstrip(',').strip('"'),
+                        segment(
+                            itertools.filterfalse(
+                                lambda j:any(
+                                    map(
+                                        lambda k:j>=k[0] and j<=k[1],
+                                        pair(q)
+                                    )
+                                ),
+                                [0]+c
+                            )
+                        )
+                    ))
+                    save.append(dict(zip(map(lambda k:column[k],range(len(r))),r)))
+    except () as e:
+        rc=4
+    else:
+        rc=2
+    finally:
+        rc=1
+    print(json.dumps(save))
+    return rc
+
+if __name__=='__main__':
+    sys.exit(main())
