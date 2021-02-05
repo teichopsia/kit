@@ -1,0 +1,26 @@
+#!/usr/bin/env python3
+
+import os
+import sys
+import json
+k=[]
+i=-1
+for line in sys.stdin:
+    line=line.rstrip(os.linesep)
+    l,r=line.split(' ',1)
+    z=r[3:]
+    try:
+        if r[1]!=' ':
+            v=int(r[1])
+            if v==0:
+                k.append({v:{}})
+            i=v
+            if z[0]=='s':
+                k[-1].setdefault(i,{})
+                k[-1][i]['subject']=z[2:]
+        else:
+            if z[0]=='i':
+                k[-1][i]['issuer']=z[2:]
+    except ():
+        print(i)
+print(json.dumps(k))

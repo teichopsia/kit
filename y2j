@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+
+import json,yaml,sys
+
+def main():
+    for f in sys.argv[1:]:
+        with open(f,'r') as t:
+            print(json.dumps(list(yaml.safe_load_all(t))))
+
+if __name__=='__main__':
+    main()

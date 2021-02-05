@@ -1,0 +1,3 @@
+#!/bin/bash
+
+pngcrush -rem allb -brute -reduce "$@"
