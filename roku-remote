@@ -5,6 +5,7 @@ import requests
 import os
 import sys
 import functools
+import socket
 
 class sehchain(object):
     def __init__(self,ex):
@@ -24,7 +25,14 @@ class sehchain(object):
 
 def invoke(display,roku,action):
     retry=5
-    url='http://{}:8060/keypress/{}'.format(roku,action)
+    #roku ecp is stupid. if the host is NOT the ip assigned it throws
+    #permission denied as if using local dns is a misconfiguration
+    #or a stupid assumption on what 'local' means wrt security
+    try:
+        res=socket.getaddrinfo(roku,8060,socket.AF_INET,socket.SOCK_STREAM)[0][-1]
+    except socket.gaierror as e:
+        return (False,e.args)
+    url='http://{}:8060/keypress/{}'.format(res[0],action)
     while retry:
         try:
             r=requests.post(url,data={},timeout=3)
@@ -36,9 +44,9 @@ def invoke(display,roku,action):
                 raise
         else:
             if r.status_code in (200,202):
-                return True
+                return (True,'')
             retry-=1
-    return False
+    return (False,'expired')
 
 def menu(display):
     display.addstr(8,20, '(`) home             (u) +                   <up>      ')
@@ -76,8 +84,8 @@ def main(target,display):
                 break
             elif k in remap.keys():
                 display.addstr(y,x,'{:<5s} {:<4s}'.format(remap[k],''))
-                t=invoke(display,target,remap[k])
-                display.addstr(y,x,'{:<5s} {:<4s}'.format(remap[k],'ack' if t else 'nak'))
+                t,e=invoke(display,target,remap[k])
+                display.addstr(y,x,'{:<5s} {:<4s} {}'.format(remap[k],'ack' if t else 'nak',e))
                 y+=1
                 y%=5
     except ():
