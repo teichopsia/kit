@@ -6,53 +6,52 @@ import os
 import sys
 import functools
 import socket
+import urllib3.util.retry
 
-class sehchain(object):
+class exchain(object):
     def __init__(self,ex):
-        self.__echain=[]
-        self.__cchain=[]
-        if isinstance(ex,Exception):
-            p=ex
-        else:
-            p=sys.exc_info()[1]
-        while p.__context__:
-            self.__echain.insert(0,'{}.{}'.format(p.__context__.__module__,p.__context__.__class__.__name__))
-            self.__cchain.insert(0,p.__context__)
-            p=p.__context__
+        self.ex=ex if isinstance(ex,Exception) else sys.exc_info()[1]
 
     def __iter__(self):
-        return iter(self.__echain)
+        p=self.ex.__context__
+        while p:
+            yield '{}.{}'.format(p.__module__,p.__class__.__name__)
+            p=p.__context__
 
 def invoke(display,roku,action):
-    retry=5
+    inv=requests.Session()
+    oneshot=urllib3.util.retry.Retry(total=0)
     #roku ecp is stupid. if the host is NOT the ip assigned it throws
     #permission denied as if using local dns is a misconfiguration
     #or a stupid assumption on what 'local' means wrt security
     try:
         res=socket.getaddrinfo(roku,8060,socket.AF_INET,socket.SOCK_STREAM)[0][-1]
     except socket.gaierror as e:
-        return (False,e.args)
+        return (False,'gaierror: {}'.format(e.args))
     url='http://{}:8060/keypress/{}'.format(res[0],action)
-    while retry:
-        try:
-            r=requests.post(url,data={},timeout=3)
-        except requests.exceptions.ConnectionError as e:
-            check=sehchain(e)
-            if 'socket.gaierror' in check:
-                retry=0
-            else:
-                raise
+    inv.mount('http://',requests.adapters.HTTPAdapter(max_retries=oneshot))
+    try:
+        r=inv.post(url,data={})
+    except requests.exceptions.ConnectionError as e:
+        if 'socket.gaierror' not in exchain(e): #should always raise since we fix gaierror above
+            raise
+        return (False,'error: {}'.format(e.args))
+    except requests.exceptions.ReadTimeout as e:
+        return (False,'expired')
+    else:
+        if r.status_code in (200,):
+            return (True,'')
+        elif r.status_code in (202,):
+            return (True,'unsupported')
         else:
-            if r.status_code in (200,202):
-                return (True,'')
-            retry-=1
-    return (False,'expired')
+            return (False,'other: {}'.format(r.status_code))
 
-def menu(display):
+def menu(display,target):
     display.addstr(8,20, '(`) home             (u) +                   <up>      ')
     display.addstr(9,20, '(z) select  (h) rew  (j) -     (k) >>   <left>  <right>')
     display.addstr(10,20,'<tab> back           (m) mute               <down>     ')
     display.addstr(11,20,'<esc> exit          <space> play/pause   <enter> enter ')
+    display.addstr(12,20,'   target: {}'.format(target))
 
 def main(target,display):
     remap={
@@ -75,19 +74,25 @@ def main(target,display):
     display.keypad(True)
     curses.curs_set(False)
     display.clear()
-    menu(display)
+    menu(display,target)
     try:
         x=y=0
         while True:
-            k=display.getch()
-            if k==27:
-                break
-            elif k in remap.keys():
-                display.addstr(y,x,'{:<5s} {:<4s}'.format(remap[k],''))
-                t,e=invoke(display,target,remap[k])
-                display.addstr(y,x,'{:<5s} {:<4s} {}'.format(remap[k],'ack' if t else 'nak',e))
-                y+=1
-                y%=5
+            try:
+                k=display.getch()
+            except KeyboardInterrupt:
+                pass
+            else:
+                if k==27:
+                    break
+                elif k in remap.keys():
+                    display.addstr(y,x,'{:<5s} {:<4s}'.format(remap[k],''))
+                    t,e=invoke(display,target,remap[k])
+                    display.addstr(y,x,'{:<5s} {:<4s} {}'.format(remap[k],'ack' if t else 'nak',e))
+                    y+=1
+                    y%=5
+    except KeyboardInterrupt:
+        pass
     except ():
         pass
     finally:
