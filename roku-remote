@@ -51,7 +51,7 @@ def menu(display,target):
     display.addstr(9,20, '(z) select  (h) rew  (j) -     (k) >>   <left>  <right>')
     display.addstr(10,20,'<tab> back           (m) mute               <down>     ')
     display.addstr(11,20,'<esc> exit          <space> play/pause   <enter> enter ')
-    display.addstr(12,20,'   target: {}'.format(target))
+    display.addstr(12,20,'   target: {}               (p) power'.format(target))
 
 def main(target,display):
     remap={
@@ -61,6 +61,7 @@ def main(target,display):
         ord('m'):'volumemute',
         ord('h'):'rev',
         ord('k'):'fwd',
+        ord('p'):'power',
         ord('z'):'select',
         ord('	'):'back',
         ord('`'):'home',
