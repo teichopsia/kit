@@ -24,6 +24,10 @@ def findall(a,b):
             return
 
 def main():
+    sep=','
+    quot='"'
+    if 'tsv' in sys.argv[0]:
+        sep='\t'
     column={}
     save=[]
     rc=10
@@ -31,7 +35,7 @@ def main():
         with open(sys.argv[1],'rt') if len(sys.argv)>1 else sys.stdin as t:
             for l,line in enumerate(t):
                 if not l:
-                    heading=line.split(',')
+                    heading=line.split(sep)
                     column=dict(zip(
                             range(len(heading)),
                             map(lambda k:k.lower()
@@ -39,10 +43,10 @@ def main():
                                 .strip('\'\n'),heading)
                         ))
                 else:
-                    c=list(findall(line,','))
-                    q=list(findall(line,'"'))
+                    c=list(findall(line,sep))
+                    q=list(findall(line,quot))
                     r=list(map(
-                        lambda k:line[k[0]:k[1]].lstrip(',').strip('"'),
+                        lambda k:line[k[0]:k[1]].lstrip(sep).strip(quot),
                         segment(
                             itertools.filterfalse(
                                 lambda j:any(
