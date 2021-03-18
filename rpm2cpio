@@ -23,7 +23,9 @@ def cpioskip(a,c):
     if a[b:b+2]==bytes([0x1f,0x8b]):
         with open(c,'wb') as r:
             r.write(a[b:])
-    return 0
+        return 0
+    else:
+        return 1
 
 def main():
     if len(sys.argv)==3:
