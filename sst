@@ -1,0 +1,72 @@
+#!/usr/bin/perl -w
+
+# expects 'ss -i dport = :xx|this'
+# ss doesnt show proto and some fields with other flags
+# like -t will omit the tcp column
+# need to fix later
+use strict;
+
+my @l;
+my $r={};
+my $h="Netid State Recv-Q Send-Q Local_Address:Port Peer_Address:Port";
+my $simple={ qq/app_limited/=>"yesno",qq/cubic/=>"tcalg" };
+while(<>) {
+	next if /Send-Q/;
+	chomp;
+	if(/ESTAB/) {
+		push @l,$_
+	} else {
+		my @z=split;
+		for(my $k=0;$k<=$#z;$k++) {
+			if($z[$k]=~/(\S+):(\S+)/) {
+				$r->{$1}{scalar @l-1}=$2
+			} else {
+				if(defined $simple->{$z[$k]}) {
+					$r->{$z[$k]}{scalar @l-1}=1;
+				} else {
+					$r->{$z[$k]}{scalar @l-1}=$z[$k+1];
+					$k++;
+				}
+			}
+		}
+	}
+}
+my @cs=sort keys %$r;
+for(my $k=0;$k<=$#cs;$k++) {
+	if(defined $simple->{$cs[$k]}) {
+		if($simple->{$cs[$k]}ne"yesno") {
+			$simple->{$simple->{$cs[$k]}}=$cs[$k];
+			$r->{$simple->{$cs[$k]}}=$r->{$cs[$k]};
+			delete $r->{$cs[$k]};
+			$cs[$k]=$simple->{$cs[$k]};
+		}
+	}
+}
+print $h;
+print " ",join(" ",@cs),"\n";
+for(my $k=0;$k<=$#l;$k++) {
+	print $l[$k];
+	my @z=split /\s+/,$l[$k];
+	foreach my $x(@cs) {
+		if(defined $simple->{$x}) {
+			if(defined $r->{$x}{$k}) {
+				if($simple->{$x}eq"yesno") {
+					print " yes"
+				} else {
+					print " ",$simple->{$x}
+				}
+			} else {
+				if($simple->{$x}eq"yesno") {
+					print " no"
+				} else {
+					print " ",$simple->{$x}
+				}
+			}
+		} elsif(defined $r->{$x}{$k}) {
+			print " ",$r->{$x}{$k}
+		} else {
+			print " _"
+		}
+	}
+	print "\n"
+}

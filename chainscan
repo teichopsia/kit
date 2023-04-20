@@ -1,0 +1,13 @@
+#!/bin/bash
+
+POST="cat -"
+
+if [[ "X$1" = "X-j" ]]; then
+    shift;
+    POST='pem2json'
+fi
+
+BASE="${1:-.}"
+
+r=$(find "$BASE" -type f -exec egrep -ql 'Certificate chain' {} \; -exec bash -c 't=$(echo {}|sed -e s/\\//\\\\\\\//g);sed -ne "/^\(-----END CERTIFICATE-----\|Certificate chain\)$/,/^-----BEGIN CERTIFICATE-----$/{/^\(-----\|Certificate chain\)/d;/^---$/q;s/^/${t} /;p}" {}' \;)
+echo "$r"|$POST

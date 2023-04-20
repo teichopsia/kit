@@ -1,0 +1,21 @@
+#!/usr/bin/perl -w
+
+use strict;
+
+sub zshift {
+	my($r)=@_;
+	my @z=(split /\./,$r);
+	for(my $i=0;$i<$#z;$i++) {
+		print join(".",@z[$i..$#z]),"\n"
+	}
+}
+
+if(-f STDIN || -p STDIN) {
+	while(<STDIN>){
+		chomp;
+		zshift($_);
+	}
+}
+foreach my $t (@ARGV) {
+	zshift($t);
+}

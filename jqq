@@ -1,0 +1,109 @@
+#!/usr/bin/perl -w
+
+#this is a jq postprocessor that flattens any leaf
+#lists so they fold to the terminal width
+#
+#-w <value>	override the terminal size
+#	@kehlarn
+#
+#	known to not be entirely stable. still testing
+
+use strict;
+
+#still not sure if i like this vs ioctl
+my $wrap=qx/tput cols/ || 80;
+$wrap--;
+my @RAV=();
+for(my $f=0;$f<=$#ARGV;$f++) {
+	if($ARGV[$f] eq "-w") {
+		if($f<$#ARGV) {
+			$wrap=$ARGV[$f+1];
+			$f++;
+			next;
+		}
+	} else {
+		push @RAV,$ARGV[$f];
+	}
+}
+@ARGV=@RAV;
+$/=undef;
+my $d=<>;
+my $inbracket=0;
+my $keep='';
+my $last='';
+my $current='';
+my $out='';
+foreach my $h (split(/([{}])/,$d)) {
+	if($h =~ /^[{}]$/) {
+		if($h eq "{") {
+			if($inbracket) {
+				print $current;
+			}
+			$inbracket=0;
+			$keep='';
+		} elsif($h eq "}") {
+			$inbracket=0;
+			$keep='';
+		}
+		print $h;
+		$last=$h;
+	} else {
+		foreach my $a (split(/([][])/,$h)) {
+			if($a =~ /^[][]$/) {
+				if($a eq "[") {
+					$inbracket=1;
+					$keep='';
+					$current=$a;
+				} elsif($a eq ']') {
+					$inbracket=0;
+					$keep=~s/\n//g;
+					$keep=~s/,\s+/, /g; #mid
+					$keep=~s/^\s*/ /g; #start
+					$keep=~s/\s*?$//g; #end calls twice, once for last item continuance and 2nd for next closing bracket
+					$keep=~s/$/ /; #so replace the now single eol with space before closing bracket
+					$keep=$current.$keep.$a;
+					my $shift=length(substr($last,rindex($last,"\n")));
+					my $cpos=$shift;
+					foreach my $z (split(/(,)/,$keep)) {
+						if($z eq ',') {
+							$out.=$z;
+						} else {
+							my $qc=()=($out=~/"/g);
+							my $cw=$cpos+length($out)+length($z);
+							#print STDERR "cw: $cw, cpos: $cpos, out: @{[length($out)]}, z: @{[length($z)]} :>$z<:\n";
+							if($cw >= $wrap) {
+								if($qc&1) {
+									my $pre=rindex($out,'"');
+									if($pre>0) {
+										my $post=substr($out,$pre);
+										print substr($out,0,$pre),"\n";
+										$out=' 'x$shift;
+										$out.=' '.$post;
+									} else {
+										print "FAIL";
+									}
+								} else {
+									print $out."\n";
+									$out=' 'x$shift;
+								}
+								$cpos=0; #only exists for first line
+							}
+							$out.=$z;
+						}
+					}
+					print $out;
+					$keep=$current=$out='';
+				} else {
+					$current.=$a;
+				}
+			} else {
+				if($inbracket) {
+					$keep.=$a;
+				} else {
+					print $a;
+					$last=$a;
+				}
+			}
+		}
+	}
+}

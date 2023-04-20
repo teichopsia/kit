@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+#@kehlarn
+
+#pulls nested pastebin ioc manifest from url
+#https://twitter.com/James_inthe_box/status/914111090425917440 -> https://pastebin.com/raw/JseHRKYu
+
+#pull from url manifest
+#./jitb_ioc_sync https://pastebin.com/raw/JseHRKYu
+
+#pull from last saved manifest in case index changes/ghosts
+#./jitb_ioc_sync <master-ioc-jitb.pastebin
+
+import requests
+import sys
+import contextlib
+import os
+import io
+
+@contextlib.contextmanager
+def obtain(url):
+    r=requests.get(url,headers={'User-Agent':'jitb-ioc-sync/1.2'})
+    try:
+        if r.status_code in (200,):
+            yield io.StringIO(r.text)
+    finally:
+        pass
+
+def topload(k):
+    v=iter(k.splitlines())
+    while v:
+        g=(next(v),next(v))
+        #exempt the url header comment from saved config
+        if g[0].find('#')<0 and len(g[0])>0:
+            yield g
+            next(v)
+
+def main():
+    with obtain(sys.argv[1]) if len(sys.argv)>1 else sys.stdin as t:
+        body=t.read()
+        for (ls,rs) in topload(body):
+            ioc=ls.rstrip(':').replace('/','-').replace(' ','-')
+            url=rs.replace('.com','.com/raw')
+            print(ioc,'->',url)
+            with obtain(url) as u:
+                with open(ioc,'wt') as v:
+                    v.write(u.read())
+        if len(sys.argv)>1:
+            with open('master-ioc-jitb.pastebin','wt') as u:
+                u.write('#{}{}'.format(sys.argv[1],os.linesep*2))
+                u.write(body)
+                u.write(os.linesep)
+    return 0
+
+if __name__=="__main__":
+    sys.exit(main())

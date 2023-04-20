@@ -1,0 +1,8 @@
+#!/bin/bash
+
+function effect() {
+    local inf=${1:-/dev/stdin}
+    cat "$inf" |dot -Tsvg:cairo|sed -e '/<title>/{n;s/transparent/black/}'|rsvg-convert|img2sixel -w1000
+}
+
+effect "$@"

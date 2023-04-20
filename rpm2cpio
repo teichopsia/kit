@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+
+#http://ftp.rpm.org/max-rpm/s1-rpm-file-format-rpm-file-format.html
+#rpm are based on libsolv to manipulate
+#but we can static skip that detail
+import struct
+import sys
+
+def cpioskip(a,c):
+    b=96
+    magic=bytes([0x8e,0xad,0xe8])
+    if a[b:b+3]!=magic:
+        print(a[b:b+3])
+        return 2
+    entry,store=struct.unpack('!2I',a[b+8:b+8+8]) #skip magic:reserved
+    b+=(entry+1)*16+store
+    b+=-b&7
+    if a[b:b+3]!=magic:
+        return 3
+    entry,store=struct.unpack('!2I',a[b+8:b+8+8]) #skip magic:reserved
+    b+=(entry+1)*16+store
+    b+=-b&7
+    if a[b:b+2]==bytes([0x1f,0x8b]):
+        with open(c,'wb') as r:
+            r.write(a[b:])
+        return 0
+    else:
+        return 1
+
+def main():
+    if len(sys.argv)==3:
+        with open(sys.argv[1],'rb') as t:
+            r=cpioskip(t.read(),sys.argv[2])
+    else:
+        print('usage:\n\t{} <rpmfile> <cpiofile>'.format(sys.argv[0]))
+        r=1
+    return r
+
+if __name__=='__main__':
+    sys.exit(main())

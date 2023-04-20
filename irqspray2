@@ -1,0 +1,291 @@
+#!/usr/bin/perl -w
+
+use strict;
+
+my $toprc=<<'EOF';
+dG9wJ3MgQ29uZmlnIEZpbGUgKExpbnV4IHByb2Nlc3NlcyB3aXRoIHdpbmRvd3MpCklkOmksIE1v
+ZGVfYWx0c2NyPTAsIE1vZGVfaXJpeHBzPTEsIERlbGF5X3RpbWU9My4wLCBDdXJ3aW49MApEZWYJ
+ZmllbGRzY3VyPaWos7S7vcDEt7q5xSYnKSorLC0uLzAxMjU2ODw+P0FCQ0ZHSElKS0xNTk9QUVJT
+VFVWV1hZWltcXV5fYGFiY2RlZmdoaWoKCXdpbmZsYWdzPTE2MTA3Niwgc29ydGluZHg9MTgsIG1h
+eHRhc2tzPTAsIGdyYXBoX2NwdXM9MCwgZ3JhcGhfbWVtcz0wCglzdW1tY2xyPTEsIG1zZ3NjbHI9
+MSwgaGVhZGNscj0zLCB0YXNrY2xyPTEKSm9iCWZpZWxkc2N1cj2lprm3uiiztMS7vUA8p8UpKiss
+LS4vMDEyNTY4Pj9BQkNGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqCgl3aW5m
+bGFncz0xOTM4NDQsIHNvcnRpbmR4PTAsIG1heHRhc2tzPTAsIGdyYXBoX2NwdXM9MCwgZ3JhcGhf
+bWVtcz0wCglzdW1tY2xyPTYsIG1zZ3NjbHI9NiwgaGVhZGNscj03LCB0YXNrY2xyPTYKTWVtCWZp
+ZWxkc2N1cj2lurs8vb6/wMFNQk7DRDM0t8UmJygpKissLS4vMDEyNTY4OUZHSElKS0xPUFFSU1RV
+VldYWVpbXF1eX2BhYmNkZWZnaGlqCgl3aW5mbGFncz0xOTM4NDQsIHNvcnRpbmR4PTIxLCBtYXh0
+YXNrcz0wLCBncmFwaF9jcHVzPTAsIGdyYXBoX21lbXM9MAoJc3VtbWNscj01LCBtc2dzY2xyPTUs
+IGhlYWRjbHI9NCwgdGFza2Nscj01ClVzcglmaWVsZHNjdXI9paanqKqwube6xMUpKywtLi8xMjM0
+NTY4Ozw9Pj9AQUJDRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl9gYWJjZGVmZ2hpagoJd2luZmxh
+Z3M9MTkzODQ0LCBzb3J0aW5keD0zLCBtYXh0YXNrcz0wLCBncmFwaF9jcHVzPTAsIGdyYXBoX21l
+bXM9MAoJc3VtbWNscj0zLCBtc2dzY2xyPTMsIGhlYWRjbHI9MiwgdGFza2Nscj0zCkZpeGVkX3dp
+ZGVzdD0wLCBTdW1tX21zY2FsZT0xLCBUYXNrX21zY2FsZT0wLCBaZXJvX3N1cHByZXNzPTAK
+EOF
+use MIME::Base64;
+
+sub preset_top {
+	if(open(T,">.toprc")) {
+		print T decode_base64($toprc);
+		close T;
+	}
+}
+
+sub gather_top_softint {
+	my $r=[];
+	if(open(T,"/usr/bin/top -bn1|")) {
+		while(<T>) {
+			if(/^%Cpu(\d+)\s+:/) {
+				my($c)=$1;
+				my(@z)=split /,/;
+				my(@si)=split /\s+/,$z[6];
+				push @$r,$si[1];
+			}
+		}
+		close T;
+	}
+	return $r;
+}
+
+sub gather_ipvs {
+	my($b,$c)=(0,0);
+	if(open(T,"</proc/net/ip_vs_stats")) {
+		my($go)=0;
+		while(<T>) {
+			if($go) {
+				my @z=split;
+				$b=hex $z[1];
+				$c=hex $z[2];
+			}elsif(/Pkts/) {$go=1;}
+		}
+		close T;
+	}
+	return ($b,$c);
+}
+{
+	my($in,$out)=(0,0);
+	my($di,$do)=(0,0);
+	sub gather_interface {
+		my($t)=@_;
+		my($li,$lo)=($in,$out);
+		if(open(T,"</sys/class/net/${t}/statistics/rx_packets")) { chomp($in=<T>);close T }
+		if(open(T,"</sys/class/net/${t}/statistics/tx_packets")) { chomp($out=<T>);close T }
+		if(!$li) {
+			return ($in,$out);
+		} elsif($in==$li) {
+			return ($di,$do);
+		} else {
+			$di=$in-$li;
+			$do=$out-$lo;
+			return ($di,$do);
+		}
+	}
+}
+
+sub ki{ my($pcivendor,$pcibus,$pcidev,$pcirest)=("?","?","?","?");my($c)=@_;my $r={};my $f=q{/proc/interrupts};if(open(T,"<$f")){<T>;while(<T>){chomp;s/^\s+//;my @z=split(/\s+/,$_,$c+2);next unless scalar @z==$c+2;my $i=substr($z[0],0,-1);
+	if($z[-1]=~/(mlx5[^@]+)\@pci:((\d{4}:\d{2}):\d{2}\.\d+)$/) {
+		($pcivendor,$pcibus,$pcidev)=($1,$3,$2);
+	} elsif($z[-1]=~/(iavf)-((\d{4}:\d{2}):\d{2}\.\d+)(.+)$/) {
+		($pcivendor,$pcibus,$pcidev,$pcirest)=($1,$3,$2,$4);
+	} else {
+		$pcivendor=(split(/\s+/,$z[-1]))[-1];
+	}
+	my $sysfs=qq@/sys/class/pci_bus/${pcibus}/device/${pcidev}/net@;
+	if(!defined $r->{$sysfs}) {
+		if(opendir(my $dh,$sysfs)){
+			my $t=join(" ",grep { !/^\./ } readdir($dh));
+			$r->{$sysfs}=$t;
+			$r->{$t}=$sysfs;
+			closedir $dh;
+		}
+	}
+	if($pcivendor=~/^mlx5/) {
+		$r->{$i}=$pcivendor.'='.$r->{$sysfs};
+	} elsif($pcivendor=~/^iavf/) {
+		if($z[-1]=~/\d{4}:\d{2}/) {
+			$r->{$i}='iavf-'.$r->{$sysfs}.$pcirest;
+		} else {
+			$r->{$i}=$pcivendor;
+		}
+	}
+};close T};return $r;}
+sub kv{my($c)=@_;my $r={};my $f=q{/proc/interrupts};if(open(T,"<$f")){<T>;while(<T>){chomp;s/^\s+//;my @z=split(/\s+/,$_,$c+2);next unless scalar @z==$c+2;my $i=substr($z[0],0,-1);
+	for(my $j=1;$j<$c+1;$j++){$r->{$j-1}{$i}=$z[$j]}
+};close T};return $r}
+
+sub ncpu{
+	my $r=0;
+	if(open(T,"/usr/bin/lscpu|")){
+		while(<T>){
+			if(/^CPU\(s\):\s+(\d+)/){ $r=$1; }
+		}
+		close T;
+	}
+	return $r;
+}
+{
+	my $hn=qq{?};
+	foreach my $fp (qw(/bin/hostname /usr/bin/hostname)) {
+		if(-x $fp) {
+			$hn=qx/$fp/;
+			last
+		}
+	}
+	chomp $hn;
+	sub hostname { return $hn; }
+}
+
+my $d=1;#0.001;
+my $c=&ncpu;
+my $l=kv($c);
+my @k=sort {$a<=>$b} grep /\d+/,keys %{$l->{"0"}};
+my $reset="[H[J";
+my $n=ki($c);
+sub gradient {
+	my($current,$lower,$upper)=@_;
+	return "" unless $upper;
+	my($r)=$current/$upper*100;
+	if(0&&$current==$lower) {
+		return "[1m[43m[30m";
+	} elsif($current==$upper) {
+		return "[1m[31m";
+	} elsif($r>=85) {
+		return "[0m[31m";
+	} elsif($r>=70) {
+		return "[1m[33m";
+	} elsif($r>=65) {
+		return "[0m[33m";
+	} elsif($r>=50) {
+		return "[1m[32m";
+	} elsif($r>=35) {
+		return "[0m[32m";
+	} else {
+		return "[0m";
+	}
+}
+sub do_stats {
+	my ($color,$aref)=(@_);
+	my @v=sort { $a <=> $b } @$aref;
+	my $z=0;
+	map {$z+=$_} @v;
+	sub colorize {
+		my($iscolor,$cvalue,$cstring,$cmin,$cmax)=@_;
+		my($pre,$post)=("","");
+		if($iscolor) {
+			$pre=gradient($cvalue,$cmin,$cmax);
+			$post="[0m";
+		}
+		return $pre.$cstring.$post;
+	}
+	my $r="";
+	$r.=sprintf "IRQ:%s\n",join("",map{colorize($color,$_,sprintf("% 6d",$_),$v[0],$v[-1])}@$aref);
+	$r.=sprintf "dc:  %s",join("",map{sprintf("% 5s%%",int($_*100/$z))}@$aref);
+	return $r
+}
+
+my $color=1;
+
+my $dirty={};
+foreach my $int (@k) {
+	$dirty->{$int}=0;
+}
+
+&preset_top;
+print "Gathering data...\n";
+my $selected="bond0";
+if(scalar @ARGV < 1) {
+	print "no interface selected, defaulting to $selected\n";
+} else {
+	$selected=$ARGV[0];
+}
+if(!$<) {
+	print "root shouldn't be necessary but ok\n";
+}
+
+my $f="%s\t%s\nCPU:";
+for(my $i=0;$i<$c;$i++) {
+	$f.=sprintf "% 6s",$i;
+}
+$f.="\t\tin\tout\n";
+
+my $rmin=[(0xffffff)x$c];
+my $rmax=[(0)x$c];
+my @iface=&gather_interface($selected);
+for(my $frame=0;;){
+	sleep($d);
+	my $r=kv($c);
+	my $v={};
+	my @max=(0,0,0);
+	my @min=(0xffffff,0xffffff,0xffffff);
+	foreach my $int (@k) {
+		my $side=0;
+		next unless defined $n->{$int};
+		if($n->{$int}=~/eth(\d+)/) {
+			$side=1+$1;
+		}
+		for(my $x=0;$x<$c;$x++) {
+			my $u=$r->{$x}{$int}-$l->{$x}{$int};
+			$v->{$int}{$x}=$u;
+			if($u>0){
+				$dirty->{$int}=15;
+			}
+			$max[$side]=($max[$side],$u)[$max[$side]<$u];
+			if($u) {
+				$min[$side]=($min[$side],$u)[$min[$side]>$u];
+			}
+		}
+		my $decay=$dirty->{$int}-1;
+		$dirty->{$int}=(0,$decay)[0<$decay];
+	}
+	my $p=$reset;
+	my @ctotal=(0)x$c;
+	foreach my $int (@k) {
+		my $side=0;
+		next unless defined $n->{$int};
+		if($n->{$int}=~/eth(\d+)/) {
+			$side=1+$1;
+		}
+		if($dirty->{$int}>0) {
+			$p.=sprintf "% 3d:",$int;
+			for(my $x=0;$x<$c;$x++) {
+				my($a,$z)=("","");
+				my $t=$v->{$int}{$x};
+				if($color) {
+					$a=gradient($t,$min[$side],$max[$side]);
+					$z="[0m";
+				}
+				$p.=sprintf "%s% 6d%s",$a,$t,$z;
+				$ctotal[$x]+=$t;
+			}
+			if(defined $n->{$int}) {
+				$p.=sprintf " %s\n",$n->{$int};
+			} else {
+				$p.=sprintf " %s\n",$int;
+			}
+		}
+	}
+	$l=$r;
+	my($top)=&gather_top_softint;
+	$p.=sprintf "si: %s\n",join("",map{sprintf("% 6s",$_)}@$top);
+	$p.=sprintf $f,do_stats($color,\@ctotal),$selected;
+	for(my $i=0;$i<$c;$i++) {
+		$rmin->[$i]=($rmin->[$i],$ctotal[$i])[$rmin->[$i]>$ctotal[$i]];
+		$rmax->[$i]=($rmax->[$i],$ctotal[$i])[$rmax->[$i]<$ctotal[$i]];
+	}
+	sub do_irqsum {
+		my($n,$t)=@_;
+		my($r)="";
+		for(my $i=0;$i<$n;$i++) {
+			$r.=sprintf "% 6d",$t->[$i];
+		}
+		return $r;
+	}
+	my(@ipvs)=&gather_ipvs;
+	@iface=&gather_interface($selected);
+	$p.=sprintf "min:%s",&do_irqsum($c,$rmin);
+	$p.=sprintf "\tipvs:\t%s\t%s\n",$ipvs[0],$ipvs[1];
+	$p.=sprintf "max:%s",&do_irqsum($c,$rmax);
+	$p.=sprintf "\tpps:\t%s\t%s\n",$iface[0],$iface[1];
+	$p.=sprintf "\nNode: %s\n",&hostname;
+	$p.=sprintf "Version: 2.1.5\n";
+	print $p;
+}

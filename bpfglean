@@ -1,0 +1,22 @@
+#!/usr/bin/perl -w
+
+#extract sock_filter structs from C code to json
+use strict;
+use JSON;
+
+my $j={};
+$/=undef;
+my $d=<>;
+while($d=~/struct\s+sock_filter\s+(\w+)\s*\[\s*\]\s*=\s*{(.+?)};/gs) {
+	my($n,$c)=($1,$2);
+	$j->{$n}=[];
+	while($c=~/{\s*([^,]+?),\s*([^,]+?),\s*([^,]+?),\s*([^,]+?),?\s*},?/g) {
+		push @{$j->{$n}},[
+			map({
+					my $n=$_;
+					($n=~/^0x/) ? hex($n) : int($n);
+				} $1,$2,$3,$4)
+		]
+	}
+}
+print to_json($j);

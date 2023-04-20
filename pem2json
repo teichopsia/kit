@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+
+'''
+pem to json
+
+pem can be from s_client/-showcerts or a pem bundle for httpd/nginx/httpx
+
+echo|openssl s_client -connect something:443 -showcerts #full chain
+echo|openssl s_client -connect something:443            #first cert only
+echo something|httpx -srd . -srtls;cat something.tls
+
+use -w to encapsulate output in pkcs header/footer
+'''
+
+import os
+import sys
+import json
+
+def collect(infile,enwrap):
+    startwrap='-----BEGIN CERTIFICATE-----'
+    endwrap='-----END CERTIFICATE-----'
+    chain={}
+    pem={}
+    chaini=pemi=-1
+    inchain=inpem=False
+    sclient=False
+    for line in infile:
+        line=line.rstrip()
+        if line[0:3]=='---' and len(line)==3:
+            inchain=False
+        elif not line.find('Certificate chain'):
+            sclient=True
+            inchain=True
+        elif not line.find(startwrap):
+            inpem=True
+            pemi+=1
+            pem[pemi]=''
+        elif not line.find(endwrap):
+            inpem=False
+        elif inpem:
+            pem[pemi]+=line
+        elif inchain:
+            line=line.rstrip(os.linesep)
+            l,r=line[0:2],line[3:]
+            try:
+                if l[1]!=' ':
+                    chaini=int(l[1])
+                    chain[chaini]={}
+                    if r[0]=='s':
+                        chain[chaini]['subject']=r[2:]
+                else:
+                    if r[0]=='i':
+                        chain[chaini]['issuer']=r[2:]
+            except (Exception) as e:
+                import traceback
+                traceback.print_exc()
+                print(chaini)
+                print(e)
+
+    for depth,cert in pem.items():
+        if enwrap:
+            cert=os.linesep.join([startwrap,cert,endwrap])
+        if depth in chain:
+            chain[depth]['pem']=cert
+        else:
+            pem[depth]=cert
+    if sclient:
+        return chain
+    else:
+        return pem
+
+if __name__=='__main__':
+    wrap=False
+    def do(k,j):
+        print(json.dumps(collect(k,j)))
+    v=[]
+    for r in sys.argv[1:]:
+        if '-w' in r:
+            wrap=True
+        else:
+            v.append(r)
+    if not sys.stdin.isatty():
+        do(sys.stdin,wrap)
+    else:
+        for file in v:
+            try:
+                do(open(file,'rt'),wrap)
+            except (FileNotFoundError) as e:
+                print('warning: ignoring',file,file=sys.stderr)

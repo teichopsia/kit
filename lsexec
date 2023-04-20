@@ -1,0 +1,70 @@
+#!/bin/bash
+#adapted from https://akkadia.org/drepper/nonselsec.pdf
+
+if [[ "$#" != "1" ]]; then
+ echo "usage: lsexec [ <pid> | process-name | --all ]"
+ exit 1
+fi
+
+cd /proc
+
+function eye() {
+ local c=$(awk '/^Uid/{print $3}' $1/status)
+ if [[ "$UID" != "0" ]] && [[ "$UID" != "$c" ]]; then
+  echo 'not allowed'
+ else
+ if [[ -r $1/maps ]]; then
+  echo -n $(basename $(readlink $1/exe))
+  printf ", PID %6d: " $1
+  if [[ -r $1/exe ]]; then
+   if eu-readelf -h $1/exe|egrep -q 'Type:[[:space:]]*EXEC'; then
+    echo -n -e '\033[31mno PIE\033[m, '
+   else
+    if eu-readelf -d $1/exe|egrep -q 'DEBUG[[:space:]]*$'; then
+     echo -n -e '\033[32mPIE\033[m, '
+     if eu-readelf -d $1/exe|fgrep -q TEXTREL; then
+      echo -ne '\033[31mTEXTREL\033[m, '
+     fi
+    else
+     echo -ne '\033[33mDSO\033[m, '
+    fi
+   fi
+   if eu-readelf -l $1/exe|fgrep -q GNU_RELRO;then
+    if eu-readelf -d $1/exe|fgrep -q BIND_NOW;then
+     if eu-readelf -l $1/exe|egrep -q '.got]( (.(data|bss)|__debug))+';then
+      echo -ne '\033[32mfull RELRO\033[m '
+     else
+      echo -ne '\033[31mincorrect RELRO\033[m '
+     fi
+    else
+     echo -ne '\033[33mpartial RELRO\033[m '
+    fi
+   else
+    echo -ne '\033[31mno RELRO\033[m '
+   fi
+  fi # -r
+  echo
+ fi #all
+ fi
+ }
+
+if [[ -d $1 ]]; then
+ eye $1
+ exit 0
+fi
+
+if [[ "$1" = "--all" ]]; then
+ for N in [1-9]*;do
+  if [[ $N != $$ ]] && readlink -q $N/exe >/dev/null; then
+   eye $N
+  fi
+ done
+ exit 0
+fi
+
+for N in $(pidof $1);do
+ if [[ -d $N ]]; then
+  eye $N
+ fi
+done
+

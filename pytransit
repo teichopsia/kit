@@ -1,0 +1,18 @@
+#!/usr/bin/env python
+
+import scipy.stats
+import numpy as np
+
+v=np.array([92, 19, 101, 58, 1053, 91, 26, 78, 10, 13, -40, 101, 86, 85, 15, 89, 89, 28, -5, 41])
+u=scipy.stats.mstats.winsorize(v,limits=[.05,.05])
+
+s=np.sort(np.array([22, 33, 44, 55, 66, 77, 88, 13, 27, 30, 99, 11, 8, 17, 12, 8, 4, 18, 3, 6]))
+t=scipy.stats.mstats.trimmed_mean(s,limits=[0,0.05])
+
+k=np.sort(np.array([ 3, 4, 6, 8, 8,11,12,13,17,18,22,27,30,33,44,55,66,77,88]))
+
+print(v,v.mean())
+print(u,u.mean())
+print(s,s.mean())
+print(t)
+print(k,k.mean())

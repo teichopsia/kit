@@ -1,0 +1,164 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use Getopt::Std;
+use 5.014;
+
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+our $VERSION = "1.1";
+sub HELP_MESSAGE {
+	help();
+}
+sub VERSION_MESSAGE {
+	print "Version: $VERSION\n";
+}
+sub help {
+	print<<EOF;
+Usage:
+	$0 [options] <filename>
+
+	-c		convert separator to space (like awk OFS=" ")
+	-t <x>	trim lines on char x
+	-x <n>	force n columns
+	-d <c>	use c as input field separator
+	-a <format>		format is a string of [lcr] for justify
+
+	e.g.	-a lcr	justify field 1 to left, 2 to center, 3 to right
+EOF
+}
+sub bail {
+	help();
+	exit 1;
+}
+
+sub init {
+	my $default={ t=>'', x=>0, d=>'\s+', a=>'-' };
+	my $opt={};
+	my $opts=q@ct:x:d:a:@;
+	for(my $i=0;$i<length($opts);$i++) {
+		my $p=substr($opts,$i,1);
+		if($p eq ":") {
+			my $l=substr($opts,$i-1,1);
+			$opt->{$l}=$default->{$l};
+		} else {
+			$opt->{$p}=undef;
+		}
+	}
+	getopts($opts,$opt) or &bail;
+	$opt->{'c'}=' ' if $opt->{'c'};
+	return $opt;
+}
+
+sub collect {
+	my($set,$f)=@_;
+	my($t,$sep)=($set->{'t'},$set->{'d'});
+	my $r=[];
+	while(<$f>) {
+		chomp;
+		my $l=$_;
+		my @z=();
+		if($l=~/^(.+?)($t.+)$/) {
+			$l=$1;
+			my $k=$2;
+			@z=split /${sep}/,$l;
+			push @z,$k;
+		} else {
+			@z=split /${sep}/,$l;
+		}
+		push @$r,[@z];
+	}
+	return @$r;
+}
+
+sub min { my $k=shift; $k=$k < $_ ? $k : $_ for @_; return $k }
+sub max { my $k=shift; $k=$k > $_ ? $k : $_ for @_; return $k }
+sub clamp { my($l,$k,$u)=@_;return min($u,max($l,$k)) }
+sub start {
+	my $justify={
+		'l'=>'-',
+		'c'=>'-',
+		'r'=>' ',
+	};
+	my $dsep={
+		'\s+'=>' ',
+		'\s'=>' ',
+	};
+	my $r=[];
+	my $p=[];
+	my $setting=&init;
+	my $clean=$setting->{'c'};
+	my $x=$setting->{'x'}-1;
+
+	# cover: cat foo | this
+	# or
+	# cover: this <input case
+	if(-f STDIN || -p STDIN) {
+		push @$r,collect($setting,\*STDIN);
+	}
+	for(my $f=0;$f<=$#ARGV;$f++) {
+		if($ARGV[$f] eq '-') {
+			#push @$r,collect($setting,\*STDIN); noop bc pipe test above
+		} elsif(open(T,"<$ARGV[$f]")) {
+			push @$r,collect($setting,\*T);
+		}
+	}
+
+	my $w={};
+	my $b=[];
+	for(my $i=0;$i<=$#$r;$i++) {
+		my $z=$r->[$i];
+		my $m=scalar @$z;
+		#compress fields down to requested
+		if($x>=0 && $m>$x) {
+			my @a=@$z[0..$x-1];
+			push @a,join(' ',@$z[$x..$m-1]);
+			$z=\@a;
+		}
+		for(my $j=0;$j<=$#$z;$j++) {
+			if(!defined $w->{$j}) {
+				$w->{$j}=0;
+			}
+			if(length($z->[$j])>$w->{$j}) {
+				$w->{$j}=length($z->[$j]);
+			}
+		}
+		push @$b,[@$z];
+	}
+
+	for(my $i=0;$i<=$#$b;$i++) {
+		my $z=$b->[$i];
+		my $alignment="l" x max(scalar @$z,1);
+		my $align=$setting->{'a'};
+		my $adjust=clamp(0,length($align),length($alignment));
+		if(length($alignment)>length($align)) {
+			$alignment=$align.substr($alignment,$adjust);
+		} else {
+			$alignment=substr($align,0,$adjust);
+		}
+		for(my $j=0;$j<=$#$z;$j++) {
+			my $pos=substr($alignment,$j,1);
+			if(!defined $justify->{$pos}) {
+				$pos="l";
+			}
+			my $pred=$w->{$j}-length($z->[$j]);
+			my $half=$pred>>1;
+			if($pos eq "c") {
+				my $pad=" "x$half;
+				if( $half<<1 != $pred) {
+					$pad.=" ";
+				}
+				printf "% *s%s",length($z->[$j])+$half,$z->[$j],$pad;
+			} else {
+				printf "%".$justify->{$pos}."*s",$w->{$j},$z->[$j];
+			}
+			my $label=$setting->{'d'};
+			$label=$dsep->{$label} || $label;	#convert regex escapes to printable
+			$label=$clean||$label;				#if we want to clean up OFS
+			print $label if $j<$#$z;
+		}
+		print "\n";
+	}
+}
+
+&start;

@@ -1,0 +1,112 @@
+#!/usr/bin/perl -w
+
+sub ki{my($c)=@_;my $r={};my $f=q{/proc/interrupts};if(open(T,"<$f")){<T>;while(<T>){chomp;s/^\s+//;my @z=split(/\s+/,$_,$c+2);next unless scalar @z==$c+2;my $i=substr($z[0],0,-1);
+	my($y)=(split(/\s+/,$z[-1]))[-1];
+	if($y=~/:\d+:/) {
+		my(@yy)=split(/:+/,$y,2);
+		my $pci=$yy[-1];
+		my $pcib=join(':',(split(/:+/,$pci))[0..1]);
+		my $sysfs=qq@/sys/class/pci_bus/${pcib}/device/${pci}/net@;
+		if(!defined $r->{$sysfs}) {
+			if(opendir(my $dh,$sysfs)){
+				my $t=join(" ",grep { !/^\./ } readdir($dh));
+				$r->{$sysfs}=$t;
+				$r->{$t}=$sysfs;
+				closedir $dh;
+			}
+		}
+		$r->{$i}=(split(/\@+/,$yy[0]))[0]."=".$r->{$sysfs};
+	} else {
+		if($i=~/\d+/) {
+			$r->{$y}=$i;
+			$r->{$i}=$y;
+		}
+	}
+};close T};return $r}
+sub kv{my($c)=@_;my $r={};my $f=q{/proc/interrupts};if(open(T,"<$f")){<T>;while(<T>){chomp;s/^\s+//;my @z=split(/\s+/,$_,$c+2);next unless scalar @z==$c+2;my $i=substr($z[0],0,-1);
+	for(my $j=1;$j<$c+1;$j++){$r->{$j-1}{$i}=$z[$j]}
+};close T};return $r}
+sub affinity{my $in=@_;
+        return log(unpack("n",pack("H4",$in)))/log(2);
+}
+
+my $d=0.001;
+my $c=16;
+my $l=kv($c);
+my @k=sort {$a<=>$b} grep /\d+/,keys %{$l->{"0"}};
+my $reset="[H[J";
+my $n=ki($c);
+sub gradient {
+	my($current,$upper)=@_;
+	my($r)=$current/$upper*100;
+	if($current==$upper) {
+		return "[1m[31m";
+	} elsif($r>=85) {
+		return "[0m[31m";
+	} elsif($r>=70) {
+		return "[1m[33m";
+	} elsif($r>=65) {
+		return "[0m[33m";
+	} elsif($r>=50) {
+		return "[1m[32m";
+	} elsif($r>=35) {
+		return "[0m[32m";
+	} else {
+		return "[0m";
+	}
+}
+my $color=1;
+
+my $dirty={};
+foreach my $int (@k) {
+	$dirty->{$int}=0;
+}
+my $f="IRQ:\nCPU:";
+for(my $i=0;$i<$c;$i++) {
+	$f.=sprintf "% 6s",$i;
+}
+$f.="\n";
+
+for(;;){
+	sleep($d);
+	my $r=kv($c);
+	my $v={};
+	my $max=0;
+	foreach my $int (@k) {
+		for(my $x=0;$x<$c;$x++) {
+			my $u=$r->{$x}{$int}-$l->{$x}{$int};
+			$v->{$int}{$x}=$u;
+			if($u>0){
+				$dirty->{$int}=15;
+			}
+			if($u>$max) {
+				$max=$u;
+			}
+		}
+		my $decay=$dirty->{$int}-1;
+		$dirty->{$int}=(0,$decay)[0<$decay];
+	}
+	my $p=$reset;
+	foreach my $int (@k) {
+		if($dirty->{$int}>0) {
+			$p.=sprintf "% 3d:",$int;
+			for(my $x=0;$x<$c;$x++) {
+				my($a,$z)=("","");
+				my $t=$v->{$int}{$x};
+				if($color) {
+					$a=gradient($t,$max);
+					$z="[0m";
+				}
+				$p.=sprintf "%s% 6d%s",$a,$t,$z;
+			}
+			if(defined $n->{$int}) {
+				$p.=sprintf " %s\n",$n->{$int};
+			} else {
+				$p.=sprintf " %s\n",$int;
+			}
+		}
+	}
+	$l=$r;
+	print $p.$f;
+	$d=1;
+}

@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+
+import sys
+import json
+import itertools
+import os
+
+def segment(k):
+    a,b=itertools.tee(k)
+    next(b,None)
+    return zip(a,b)
+
+def pair(k):
+    j=iter(k)
+    return zip(j,j)
+
+def findall(a,b):
+    i=0
+    while i<len(a):
+        k=a.find(b,i)
+        if k>=0:
+            yield k
+            i=k+1
+        else:
+            return
+
+def main():
+    sep=','
+    quot='"'
+    target=1
+    if 'tsv' in sys.argv[0]:
+        sep='\t'
+    for ai,av in enumerate(sys.argv):
+        if av == '-t':
+            sep=sys.argv[ai+1]
+            target=ai+2
+    column={}
+    save=[]
+    rc=10
+    try:
+        with open(sys.argv[target],'rt') if len(sys.argv)>1 else sys.stdin as t:
+            for l,line in enumerate(t):
+                line=line.rstrip(os.linesep)        #should have option to specify
+                if not l:
+                    heading=line.split(sep)
+                    column=dict(zip(
+                            range(len(heading)),
+                            map(lambda k:k.lower()
+                                .replace(' ','_')
+                                .strip('\'\n'),heading)
+                        ))
+                else:
+                    ''' this is tricky to explain. it's convoluted looking
+                    because we want to employ iterators as much as possible
+
+                    the idea is c is the list of tokens split on sep. we take
+                    pairs of c and compare them against a similar segmentation
+                    based on quotes. it's adapting the even/odd rule from
+                    concave polytopes to quote blocks. this implodes if you
+                    allow nesting meta escapes because of no depth resolution
+                    and acts like a convex polytope would
+
+                    j becomes a list of bools satisfying if that segment
+                    violates the quote bounds found. if no such violation
+                    is found the token is deemed valid and passed on
+                    '''
+                    c=list(findall(line,sep))
+                    q=list(findall(line,quot))
+                    ff=segment(
+                            itertools.filterfalse(
+                                lambda j:any(
+                                    map(
+                                        lambda k:j>=k[0] and j<=k[1],
+                                        pair(q)
+                                    )
+                                ),
+                                [0]+c+[len(line.rstrip())] #add start/end of line back into mix
+                            )
+                        )
+                    r=list(map(
+                        lambda k:line[k[0]:k[1]].lstrip(sep).strip(quot),
+                        ff
+                    ))
+                    #clamp length to column length. merge excess to last column
+                    if len(r)>len(column):
+                        r=r[0:len(column)-1]+[''.join(r[len(column)-1:])]
+                    save.append(dict(zip(map(lambda k:column[k],range(len(r))),r)))
+    except () as e:
+        rc=4
+    else:
+        rc=2
+    finally:
+        rc=1
+    try:
+        print(json.dumps(save))
+    except BrokenPipeError:
+        rc=3
+    return rc
+
+if __name__=='__main__':
+    ''' todo: arguments to handle:
+    -t <sep>    tab, comma, etc
+    -l <eol>    unix lf, dos crlf, mac cr
+    -x          collapse more fields than column
+    -h          ignore header collection (naked dataset)
+    '''
+    sys.exit(main())

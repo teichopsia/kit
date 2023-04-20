@@ -1,0 +1,11 @@
+#!/usr/bin/perl -w
+
+$/=undef;
+my @d=split(/\n/,<>);
+print join("\n",sort {
+	my @i=split(/\./,$a);
+	my @j=split(/\./,$b);
+
+	scalar reverse($i[0]) cmp scalar reverse($j[0]) || 
+	$i[1] cmp $j[1];
+} @d),"\n";

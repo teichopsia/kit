@@ -1,0 +1,5 @@
+#!/bin/sh
+while [ "X$1" != "X" ]; do
+    cat $1 |openssl dgst -sha384 -binary|openssl enc -base64 -A;echo
+    shift
+done

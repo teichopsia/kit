@@ -1,0 +1,17 @@
+! xrdb -merge ~/.Xresources
+xterm*faceName: Ubuntu Mono
+xterm*faceSize: 12
+
+XTerm*allowWindowOps: true
+XTerm*decTerminalID: vt340
+XTerm*sixelScrolling: true
+XTerm*regisScreenSize: 1920x1080
+XTerm*numColorRegisters: 256
+
+XTerm*scrollTtyOutput: false
+
+*VT340*translations:#override \n\
+    Shift <KeyPress>Insert: insert-selection(CLIPBOARD)
+
+!    ~Shift <Key>Insert: insert-selection(PRIMARY)
+

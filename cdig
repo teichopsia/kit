@@ -1,0 +1,44 @@
+#!/bin/bash 
+
+function cdig() {
+		local rr=$1;
+		local t=$2;
+		local ns=$3;
+		shift 3;
+		local flags="$*";
+		dig ${flags} +tries=3 +timeout=1 $rr $t @$ns|awk '
+		BEGIN{IGNORECASE=1;status=section="?"}
+		/status:/{
+				for(i=1;i<=NF;i++) {
+						if($i=="status:") {
+								status=substr($(i+1),1,length($(i+1))-1);
+								if(status=="REFUSED"){status=section="_";pp=1}
+								if(status=="NOERROR"){status="="}
+								if(status=="TIMEOUT"){status="."}
+								if(status=="NXDOMAIN"){status="X";}
+								if(status=="SERVFAIL"){status="*";pp=1}
+						}
+				}
+		}
+		/^;; ANSWER SECTION/{section="="}
+		/^;; AUTHORITY SECTION/{section=">"}
+		/^;; connection timed out/{section=status=".";pp=1}
+		/^;; Connection to.+connection refused/{section=status="!";pp=1}
+		{
+				za="'$ns'"
+				zb="'$rr' "$0;
+				if(section=="="&&$3=="IN"&&$4=="'$rr'") {
+					status="="
+					print za,status""section,zb
+				} else if(section==">"&&$3=="IN") {
+					section=">"
+					print za,status""section,zb
+				} else if(pp) {
+					zb="'$rr' '$t'"
+					print za,status""section,zb
+					pp=0
+				}
+		}'
+}
+
+cdig "$@"

@@ -1,0 +1,13 @@
+#!/bin/bash
+
+function dumpcc() {
+    local cert=${1:-/dev/stdin}
+    shift
+    local trailer=$cert
+    if [[ ! -t 0 ]]; then
+        trailer=-
+    fi
+    openssl crl2pkcs7 -nocrl -certfile $cert | openssl pkcs7 -print_certs -noout $@|egrep -v '^$' |awk '{print "'$trailer'",$0}'
+}
+
+dumpcc "$@"

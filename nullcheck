@@ -1,0 +1,12 @@
+#!/bin/bash
+
+function scan() {
+        while(($#));do
+                if [[ $(stat -c %s "$1") -ne 0 ]]; then
+                        (cat "$1"|tr -d '\0'|read -n 1 && echo ok || echo err)|awk '{print "'"$1"'",$0}'
+                fi
+                shift;
+        done
+}
+
+scan "$@"

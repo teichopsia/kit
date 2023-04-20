@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+'''
+ubuntu bionic/4.15.0 doesn't have bpf tooling that includes the asm/dbg tools
+linux-tools-common only has a limited bpftool. no idea why they didnt add asm/dbg
+
+for malware we want to dump filters without loading them (duh) so this is
+a fairly obvious use case to me?
+
+ex:
+    bpfglean bpfdoor.c |bpfdisgen |kernel/bpf_dbg
+
+glean slurps out any sock_filter arrays
+disgen just wraps the json into a dbg disassemble command
+'''
+import os
+import sys
+import struct
+import json
+
+def produce():
+	with sys.stdin as t:
+		bpf=t.read()
+		bpf=json.loads(bpf)
+		''' i was originally trying to parse dmesg/klog dumps. those are jit
+		ebpf. we might want this later but my current kernel doesn't allow
+		for bpf_jit_enable==2 to enable it so can't test'''
+		if False:
+			print('flen=69 proglen={} pass=69 image=2beadded'.format(len(bpf)*8))
+			offset=0
+			for op in bpf:
+					for b in struct.pack('HBBI',*op):
+							if not (offset%0x10):
+									print('JIT code: {:08x}:'.format(offset),end='')
+							print(' {:02x}'.format(b),end='')
+							if (offset%0x10)==0x10-1:
+									print()
+							offset+=1
+		else:
+			for symbol in bpf:
+				p=','.join(['{} {} {} {}'.format(*x) for x in bpf[symbol]])
+				print('load bpf {},{}'.format(len(bpf[symbol]),p))
+				print('disassemble')
+			print('quit')
+
+if __name__=='__main__':
+	try:
+		produce()
+	except (IOError,BrokenPipeError,KeyboardInterrupt) as e:
+		pass
+	else:
+		try:
+			sys.stdout.flush()
+		except (IOError,BrokenPipeError,KeyboardInterrupt) as e:
+			try:
+				sys.stdout.close()
+			except (IOError,BrokenPipeError,KeyboardInterrupt) as e:
+				pass
+'''
+#we dont use stderr but if we do...
+				try:
+					sys.stderr.flush()
+				finally:
+					sys.stderr.close()
+'''

@@ -1,0 +1,32 @@
+#!/usr/bin/perl -w
+
+$/=undef;
+my $d=<>;
+my @save=();
+my $c2i={};
+my $i2c={};
+my $max=0;
+foreach my $line (split(/\n/,$d)) {
+	$line=~s/,\s*$//;
+	if($line=~/^# (.+)$/) {
+		my @c=split(/,/,$1);
+		foreach my $col (@c) {
+			if(length($col)) {
+				$c2i->{$col}=$max;
+				$i2c->{$max}=$col;
+				$max++
+			}
+		}
+	} else {
+		push @save,[split(/,/,$line,$max)];
+	}
+}
+for(my $i=0;$i<$max;$i++) {
+	my $f=$i2c->{$i};
+	print "$f";
+	for(my $j=0;$j<=$#save;$j++) {
+		print "\t",$save[$j][$i];
+	}
+	print "\n";
+}
+

@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+
+import sys
+import configparser
+
+class Config(object):
+	__configfile=None
+	__config=None
+	def __init__(self,f,delimiters=('=')):
+		if f != self.__configfile and not isinstance(self.__config,configparser.RawConfigParser):
+			self.__config=configparser.RawConfigParser(strict=False,allow_no_value=True,delimiters=delimiters)
+			self.__config.optionxform=str
+			self.__config.read(f)
+			self.__configfile=f
+	def configKey(self,section,depth=0):
+		r=[]
+		try:
+			for child in self.__config.options(section):
+				r.extend(self.configKey(child,depth+1))
+		except (configparser.NoSectionError) as e:
+			try:
+				for child in self.__config.options(section+':children'):
+					r.extend(self.configKey(child,depth+1))
+			except (configparser.NoSectionError) as e:
+				if depth:
+					r.append(section)
+		return r
+	def configGet(self,section,key):
+		r=[]
+		try:
+			r=self.__config.get(section,key).strip('"')
+		except configparser.NoOptionError:
+			pass
+		except configparser.NoSectionError:
+			pass
+		finally:
+			return r
+
+def main():
+	r=86
+	d=['=',' ']
+	try:
+		f=sys.argv[1]
+	except (IndexError) as e:
+		print('{0} <file> [[section] ...] '.format(sys.argv[0]))
+		r=1
+	else:
+		t=Config(f,delimiters=d)
+		for s in sys.argv[2:]:
+			for n in t.configKey(s):
+				print(n)
+		r=0
+	return r
+
+if __name__=='__main__':
+	r=85
+	try:
+		r=main()
+	except:
+		pass
+	finally:
+		sys.stdout=None
+		sys.exit(r)

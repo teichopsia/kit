@@ -1,0 +1,29 @@
+#!/usr/bin/env python3
+
+import sys
+import xml.dom.minidom
+import re
+
+def rep(k,e='\n'):
+    if False:
+        print('[',k,']',end=e)
+
+def visit(n,r):
+    if n.childNodes:
+        for node in list(n.childNodes):
+            if node.nodeType == node.TEXT_NODE:
+                k=node._get_wholeText().strip(r)
+                rep(k,'')
+                if re.search(r'^[ \t]*$',k):
+                    n.removeChild(node)
+                    rep('-')
+                else:
+                    node.replaceWholeText(k)
+                    rep('+')
+            elif node.nodeType == node.ELEMENT_NODE:
+                visit(node,r)
+
+with open(sys.argv[1],'rt') if len(sys.argv)>1 else sys.stdin as t:
+    p=xml.dom.minidom.parseString(t.read())
+    visit(p,'\r\n')
+    print(p.toprettyxml(newl='\n',indent='\t'))

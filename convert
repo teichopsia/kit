@@ -1,0 +1,3 @@
+-define png:include-chunk=none -strip
+
+convert original.jpg -profile sRGB2014.icc -strip -set profile sRGB2014.icc version.jpg

@@ -1,0 +1,44 @@
+#!/usr/bin/env perl
+
+use warnings;
+use strict;
+
+my @RA=();
+my $focus=-1;
+for(my $c=0;$c<=$#ARGV;$c++) {
+	if($ARGV[$c] eq "-k") {
+		if($c<$#ARGV) {
+			$focus=$ARGV[$c+1];
+			$c++;
+		} else {
+			print "no argument to -k present, bailing\n";
+		}
+	} else {
+		push @RA,$ARGV[$c];
+	}
+}
+@ARGV=@RA;
+if($focus>=0) {
+	my $last=undef;
+	my @l=();
+	while(<>) {
+		chomp;
+		my @z=split;
+		my @t=();
+		for(my $i=0;$i<=$#z;$i++) {
+			if($i!=$focus) {
+				push @t,$z[$i];
+			}
+		}
+		if($last&&$last ne $z[$focus]) {
+			print $last," ",join(" ",@l),"\n";
+			@l=@t;
+		} else {
+			push @l,@t;
+		}
+		$last=$z[$focus];
+	}
+	print $last," ",join(" ",@l),"\n";
+} else {
+	print "need a focus, specify -k <n>, to focus on field n\n";
+}

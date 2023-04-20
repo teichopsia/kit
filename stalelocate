@@ -1,0 +1,21 @@
+#!/bin/bash
+
+export TZ=UTC
+FAILSTALE=22
+
+function stalelocate() {
+	local DAYSAGO=7
+	local WHEN=$(date --date=@$(($(date +%s)-86400*${DAYSAGO})))
+	local SINCE=/tmp/$$.locatedb.since
+	local LOCATEDB=/var/lib/mlocate/mlocate.db
+	touch -d "$WHEN" "$SINCE" && trap "rm -- '$SINCE'" EXIT
+	[[ "${LOCATEDB}" -ot "${SINCE}" ]]
+	return $?
+}
+	
+if stalelocate; then
+	echo Locate data too stale
+	exit $FAILSTALE
+fi
+echo Continue...
+exit 0

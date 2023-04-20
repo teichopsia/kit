@@ -1,0 +1,307 @@
+#!/usr/bin/env python3
+# vim:fileencoding=UTF-8:noet:ts=4:sts=4:sw=4:tw=0:ff=unix
+
+'''
+convert pem bundles into their json equivalent for easier parsing
+
+these options are paired so you can weave them off/on
+
+-s simple output (default)
+-x extended output (usage/other extensions)
+
+-m merge all arguments into a single dictionary keyed by filename
+-n disable merge
+
+-i include the original pem
+-v omit the pem
+
+-k <n> only print the Nth pem
+'''
+
+import sys
+import cryptography
+import cryptography.x509
+try:
+	pin={
+			'3.6.9':'36.0.2',#ubuntu 18
+	}
+	for py3,cry in pin.items():
+		if not sys.version.find(py3):
+			assert(cryptography.__version__==cry)
+except (AssertionError) as e:
+	print('python',py3,'requires cryptography',cry,'not',cryptography.__version__)
+	sys.exit(1)
+import warnings
+warnings.filterwarnings('ignore',category=cryptography.utils.CryptographyDeprecationWarning)
+'''./pj:253: CryptographyDeprecationWarning: Parsed a negative serial number, which is disallowed by RFC 5280.
+  'serial': k.serial_number,
+'''
+import re
+import functools
+import binascii
+import json
+import stat
+import os
+import traceback
+
+def extract(thus,simple,include,startmarker,endmarker,pemslice):
+	with thus as k:
+		c=k.read()
+		if(isinstance(c,str)):
+			c=c.encode('utf-8')
+		done=False
+		o=-1
+		j=[]
+		while not done:
+			o=c.find(startmarker,o+1)
+			if o>=0:
+				c=c[o:]
+				o=0
+				zzz=cryptography.x509.load_pem_x509_certificate(c)
+				#,cryptography.hazmat.backends.default_backend())
+				j.append(simplify(zzz,simple))
+				if include:
+					j[-1]['pem']=c[:c.find(endmarker)+len(endmarker)].decode('utf-8')
+				for pslice in pemslice:
+					if pslice==len(j)-1:
+						j[-1]['pem']=c[:c.find(endmarker)+len(endmarker)].decode('utf-8')
+			else:
+				done=True
+	if len(pemslice)>0:
+		for pslice in pemslice:
+			print(j[pslice]['pem'])
+		return None
+	else:
+		return dict(enumerate(j))
+
+def main(t):
+	def collate():
+		if p:
+			if not merge:
+				print(json.dumps(p))
+			else:
+				final[t[arg]]=p
+	final={}
+	simple=True
+	merge=False
+	include=False
+	startmarker=b'-----BEGIN CERTIFICATE-----'
+	endmarker=b'-----END CERTIFICATE-----'
+	inc=os.stat(sys.stdin.fileno()).st_mode
+	pemslice=[]
+	if stat.S_ISFIFO(inc):
+		p=extract(sys.stdin,simple,include,startmarker,endmarker,pemslice)
+		collate()
+	elif stat.S_ISREG(inc):
+		p=extract(sys.stdin,simple,include,startmarker,endmarker,pemslice)
+		collate()
+	arg=0
+	while arg < len(t):
+		if t[arg] == '-x':
+			simple=False
+		elif t[arg] == '-s':
+			simple=True
+		elif t[arg] == '-m':
+			merge=True
+		elif t[arg] == '-k':
+			if arg<len(t):
+				pemslice.append(int(t[arg+1]))
+				arg+=1
+			else:
+				print('missing argument to -k')
+				return 3
+		elif t[arg] == '-n':
+			if merge:
+				if final:
+					print(json.dumps(final)) #flush all gathered to this point
+					final={}
+			merge=False
+		elif t[arg] == '-i':
+			include=True
+		elif t[arg] == '-v':
+			include=False
+		else:
+			p=None
+			try:
+				st=os.stat(t[arg])
+			except (FileNotFoundError) as e:
+				if t[arg]=='-':
+					pass
+				else:
+					print('ignoring',t[arg],file=sys.stderr)
+			else:
+				if stat.S_ISFIFO(os.stat(t[arg]).st_mode):
+					p=extract(sys.stdin,simple,include,startmarker,endmarker,pemslice)
+				elif stat.S_ISREG(st.st_mode):
+					p=extract(open(t[arg],'rb'),simple,include,startmarker,endmarker,pemslice)
+			finally:
+				collate()
+		arg+=1
+	if final:
+		print(json.dumps(final))
+	return 0
+
+def colonize(t):
+	if isinstance(t,bytes):
+		t=t.decode('utf-8')
+	if len(t)%2:
+	    t="0"+t
+	return ''.join(map(lambda x:x if x else ':',re.split('([0-9A-Fa-f]{2})',t)))[1:-1]
+
+@functools.lru_cache(maxsize=None)
+def fingerprint(t,a=cryptography.hazmat.primitives.hashes.SHA1):
+	return binascii.hexlify(t.fingerprint(a()))
+
+def getusage(t,s=None):
+	ku=obtain(t,'keyUsage')
+	if ku:
+		return {y:getattr(ku,y) for y in (
+			'digital_signature', 'content_commitment', 'key_encipherment',
+			'data_encipherment', 'key_agreement', 'key_cert_sign',
+			'crl_sign', # 'encipher_only', 'decipher_only'
+		)}
+
+def getextusage(t,s=None):
+	ext=obtain(t,'extendedKeyUsage')
+	if ext:
+		return [x._name for x in ext._usages]
+	else:
+		return None
+
+def iscleanname(v):
+	if isinstance(v,str):
+		return v
+	elif hasattr(v,'value') and isinstance(v.value,str):
+		return v.value
+	elif hasattr(v,'value') and isinstance(v.value,bytes):
+		return v.value.decode('utf-8')
+	elif isinstance(v,cryptography.x509.general_name.RFC822Name):
+		return v.value
+	elif isinstance(v,cryptography.x509.general_name.DNSName):
+		return v.value
+	elif isinstance(v,cryptography.x509.name.Name):
+		return v.value.rfc4514_string()
+	else:
+		return '?? {}'.format(v)
+
+def getsan(t,s=True):
+	san=obtain(t,'subjectAltName') or []
+	r={}
+	for k in san:
+		c=iscleanname(k)
+		sp=re.split("[\.']",str(k.__class__))
+		if sp[1] == 'cryptography' and sp[2] == 'x509':
+			sp=sp[-2]
+		r.update(dict.fromkeys([c],sp))
+	return r
+
+def getca(t,s=None):
+	con=obtain(t,'basicConstraints')
+	if con and hasattr(con,'ca'):
+		return con.ca
+	else:
+		return None
+
+def otherext(t):
+	supported=['basicConstraints','subjectAltName','keyUsage','extendedKeyUsage',
+		'certificatePolicies','authorityInfoAccess','cRLDistributionPoints',
+		'subjectKeyIdentifier','authorityKeyIdentifier']
+	unsup=list(filter(lambda y:y,[x.oid._name if x.oid._name not in supported else '' for x in t.extensions]))
+	rest={}
+	def oidcheck(k):
+		if hasattr(k,'oid'):
+			return k.oid.dotted_string
+		elif hasattr(k,'access_method'):
+			return k.access_method.dotted_string
+		elif hasattr(k,'policy_identifier'):
+			return k.policy_identifier.dotted_string
+		else:
+			return None
+	for x in t.extensions: #authorityInfoAccess/certificatePolicies/cRLDistributionPoints
+		#if x.oid.dotted_string=='2.16.528.1.1003.1.2.5.9'):
+		if oidcheck(x)=='2.5.29.14': #subject keyid
+			rest['skid']=colonize(binascii.hexlify(x.value.digest))
+		elif oidcheck(x)=='2.5.29.35': #auth keyid
+			if x.value.key_identifier:
+				rest['akid']=colonize(binascii.hexlify(x.value.key_identifier))
+			else:
+				rest['akid']='?'
+		elif oidcheck(x)=='2.5.29.31': #crl
+			rest['crl']=[]
+			for y in x.value:
+				for fn in y.full_name:
+					if isinstance(fn,cryptography.x509.general_name.UniformResourceIdentifier):
+						rest['crl'].extend([fn.value])
+			rest['crl']=' '.join(rest['crl'])
+		elif oidcheck(x)=='2.5.29.32': #policies
+			for y in x.value:
+				if oidcheck(y)=='2.16.528.1.1003.1.2.5.9': #cps
+					rest['cps']=' '.join(y.policy_qualifiers)
+		elif oidcheck(x)=='1.3.6.1.5.5.7.1.1': #AIA
+			for y in x.value:
+				if oidcheck(y)=='1.3.6.1.5.5.7.48.1': #AIA>OCSP
+					rest['ocsp']=y.access_location.value
+				elif oidcheck(y)=='1.3.6.1.5.5.7.48.2': #AIA>caIssuers
+					rest['aia']=y.access_location.value
+	return unsup,rest
+
+def obtain(t,s):
+	r=list(filter(lambda y:y,[x if x.oid._name==s else '' for x in t.extensions]))
+	if len(r)>0:
+		return r[0].value
+	else:
+		return None
+
+def cleanoid(t):
+	'''these oids arent known so provide them and deal with bogus escape on commas'''
+	s=t.replace('\\','')
+	s=s.replace('2.5.4.15','businessCategory')
+	s=s.replace('2.5.4.15','businessCategory')
+	s=s.replace('2.5.4.5','serialNumber')
+	s=s.replace('1.3.6.1.4.1.311.60.2.1.2','IncST')#'jurisdictionOfIncorporationStateOrProvinceName'
+	s=s.replace('1.3.6.1.4.1.311.60.2.1.3','IncC') #'jurisdictionOfIncorporationCountryName'
+	return s
+
+def simplify(k,simple=True):
+	unsup,sup=otherext(k)
+	o=dict.fromkeys(unsup,'<tbd>')
+	z='utf-8'
+	r={
+	'serial': k.serial_number,
+	'cserial': colonize('{:x}'.format(k.serial_number)),
+	'fingerprint': fingerprint(k).decode(z),
+	'cfingerprint': colonize(fingerprint(k)),
+	'cfingerprint256': colonize(fingerprint(k,cryptography.hazmat.primitives.hashes.SHA256)),
+	'issuer': cleanoid(k.issuer.rfc4514_string()),
+	'subject': cleanoid(k.subject.rfc4514_string()),
+	'startdate': k.not_valid_before.strftime('%c'),
+	'enddate': k.not_valid_after.strftime('%c'),
+	'isostartdate': k.not_valid_before.isoformat(),
+	'isoenddate': k.not_valid_after.isoformat(),
+	'epochstart': int(k.not_valid_before.timestamp()),
+	'epochend': int(k.not_valid_after.timestamp()),
+	'version': k.version.value,
+	'san': getsan(k),
+	'usage': getusage(k),
+	'extusage': getextusage(k),
+	'isca': getca(k),
+	}
+	for mv in ('akid','skid'):
+		if mv in sup:
+			r[mv]=sup[mv]
+			del(sup[mv])
+	if not simple:
+		sup.update(o)
+		r.update({'extension':sup})
+	else:
+		del(r['usage'])
+	return r
+
+if __name__=='__main__':
+	try:
+		r=main(sys.argv[1:])
+		sys.stdout=None
+		sys.exit(r)
+	except (Exception) as e:
+		print('bailing:',e)
+		traceback.print_exc()

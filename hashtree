@@ -1,0 +1,211 @@
+#!/usr/bin/env python3
+'''
+purpose of this tool is to mimic the behaviour of:
+    git ls-files -s
+    git ls-tree HEAD
+
+    but works on arbitrary directories without the need of git. the git
+    tool is useful but sometimes you dont want to deal with staging/commiting
+    to get full use of it. maybe you can do this without a git repo using
+    git and i havent found it. so be it! sometimes you just dont have git
+    in prod
+
+    this was originally conceived to handle modified httpx tls certificate output:
+        httpx -srd foo -sr -srtls -fulljson
+        httpx -srd foo2 -sr -srtls -fulljson
+        #perform a hashed diff of directories, show all results, sha256 digests
+        ./hashtree foo foo2 all no
+        #perform a hashed diff of directories, show only different results, git hash digests
+        ./hashtree foo foo2 dirty yes
+
+    see usage for full options
+'''
+
+import os,sys,re,hashlib,operator,argparse
+try:
+    from colorama.ansi import Fore as __REDIRECT_Fore
+    from colorama import Style as __REDIRECT_Style
+    CYAN=__REDIRECT_Fore.CYAN
+    RED=__REDIRECT_Fore.RED
+    GREEN=__REDIRECT_Fore.GREEN
+    MAGENTA=__REDIRECT_Fore.MAGENTA
+    RESET_ALL=__REDIRECT_Style.RESET_ALL
+except ImportError as e:
+    CYAN=MAGENTA=GREEN=RED=RESET_ALL=''
+
+def compare(context):
+    if isinstance(context.git,str):
+        if context.git.lower() in ('1','on','yes','y','true','enable','git'):
+            context.git=True
+        elif context.git.lower() in ('0','off','no','n','false','disable','nogit'):
+            context.git=False
+    setop=operator.or_
+    # 1=left, 2=right, 4=clean, 8=dirty as below
+    clut={1:CYAN,2:MAGENTA,4:GREEN,8:RED,}
+    if isinstance(context.flagmask,str):
+        trueflag=0
+        try:
+            context.flagmask=int(context.flagmask)
+        #handle minigrammar
+        except ValueError:
+            flagop=operator.or_
+            # as above coloring
+            fverb={'dirty':8,'clean':4,'right':2,'left':1,}
+            fverb['all']=sum(fverb.values())
+            fop={'+':operator.or_,'-':lambda i,j:operator.and_(i,operator.xor(fverb['all'],j))}
+            for fv in re.split('([-|+])',context.flagmask):
+                if fv in fverb:
+                    trueflag=flagop(trueflag,fverb[fv])
+                elif fv in fop:
+                    flagop=fop[fv]
+            context.flagmask=trueflag
+
+    def manifest(ka):
+        for kr,ks,kf in os.walk(ka):
+            for kv in kf:
+                yield os.path.join(kr,kv)
+
+    def ingest(ja,githash=False):
+        jr={}
+        for jl in manifest(ja):
+            if githash:
+                jz=hashlib.sha1()
+            else:
+                jz=hashlib.sha256()
+            with open(jl,'rb') as jx:
+                if githash:
+                    jp='blob {}\0'.format(os.stat(jl).st_size)
+                    jp=jp.encode('utf-8')
+                    jz.update(jp)
+                jz.update(jx.read())
+            jr[os.path.relpath(jl,ja)]=jz.hexdigest()
+        return jr
+
+    def clamp(n,a,b):
+        return max(a, min(n, b))
+    def shorthash(ia,fw,githash=False):
+        if ia=='':
+            return ''
+        else:
+            if githash:
+                fw=clamp(fw,4,40)
+                return ia[0:fw]
+            else:
+                fw=clamp(fw,4,64)
+                if len(ia)>fw:
+                    fw-=2
+                    return ia[0:fw>>1]+'..'+ia[-(fw>>1):]
+                else:
+                    return ia
+
+    def classify(qa,qb,mw):
+        qw=dict.fromkeys(clut.keys(),0)
+        qx={}
+        qwidth=0
+        for qt in set(qa)|set(qb):
+            ql=qr=''
+            qn=0
+            if qt in qa:
+                ql=qa[qt]
+                qn=1
+            if qt in qb:
+                qr=qb[qt]
+                qn=2
+            if all((qt in qa,qt in qb)):
+                if qa[qt]==qb[qt]:
+                    qn=4
+                else:
+                    qn=8
+            qx[qt]=(qn,ql,qr)
+            if len(qt)>qw[qn]:
+                qw[qn]=len(qt)
+        if sys.stdout.isatty():
+            qwidth,_=os.get_terminal_size(1)
+        if sys.stdin.isatty():
+            qwidth,_=os.get_terminal_size(0)
+        for qv in qw:
+            qw[qv]=max(12,min(qw[qv],qwidth-mw))
+        return qw,qx
+
+    if context.git:
+        ow=9
+    else:
+        ow=10
+    if context.hashlength:
+        ow=context.hashlength
+    ld=ingest(context.left,context.git)
+    rd=ingest(context.right,context.git)
+    wlut,dlut=classify(ld,rd,len(context.sep)*2+ow*2)
+    w=0
+    #produce ascending sorted list of enabled flags
+    #walk all the types enabled to find field max widths
+    for enabled in filter(None,[2**p*int(k) for p,k in enumerate(reversed(bin(context.flagmask)[2:]))]):
+        if wlut[enabled]>w:
+            w=wlut[enabled]
+            if context.width and w>context.width:
+                w=context.width
+    for t in sorted(dlut):
+        tg,tl,tr=dlut[t]
+        line='{:>{}s}{}{:^{}.{}s}{}{:<{}s}'.format(
+                        shorthash(tl,ow,context.git),ow,context.sep,
+                        t,w,w,context.sep,
+                        shorthash(tr,ow,context.git),ow)
+        if context.color==1:
+            line='{}{}{}'.format(
+                        clut[tg],
+                        line,
+                        RESET_ALL)
+        if tg&context.flagmask:
+            print(line)
+    return 0
+
+def main():
+    version=(1,0,3)
+    parser=argparse.ArgumentParser(description='kehlarn hashtree',add_help=True)
+    required = parser.add_argument_group('required arguments')
+    optional = parser.add_argument_group('optional arguments')
+    #optional.add_argument( '-h', '--help', action='help', default=argparse.SUPPRESS, help='show this help message and exit')
+    #required.add_argument('--required_arg', required=True)
+    #optional.add_argument('--optional_arg')
+    optlist=[
+    [   ['left'],{'type':str,'help':'directory','metavar':'<left>'}],
+    [   ['right'],{'type':str,'help':'directory','metavar':'<right>'}],
+    [   ['flagmask'],{'type':str,'help':'mask expression','metavar':'<flagmask>'}],
+    [   ['-g','--git'],
+        {'action':'store_const','dest':'git','const':True,
+        'help':'use git sha1 hash','default':False}],
+    [   ['-t','--sep'],
+        {'action':'store','type':str,'dest':'sep','nargs':1,
+        'help':'field separator character','metavar':'<char>','default':' '}],
+    [   ['-w','--width'],
+        {'action':'store','type':int,'dest':'width','nargs':1,
+        'help':'filename width','metavar':'<width>','default':0}],
+    [   ['-l','--hashlength'],
+        {'action':'store','type':int,'dest':'hashlength','nargs':1,
+        'help':'hash display width','metavar':'<hlwidth>','default':0}],
+    [   ['-c','--color'],
+        {'action':'store_const','dest':'color','const':1,
+        'help':'enable color','default':-1}],
+    [   ['-n','--nocolor'],
+        {'action':'store_const','dest':'color','const':0,
+        'help':'disable color','default':-1}],
+    [   ['-V','--version'],
+        {'action':'version','version':'%(prog)s {}.{}.{} by kehlarn'.format(*version)}],
+    ]
+    for p,k in optlist:
+        parser.add_argument(*p,**k)
+    context,rest=parser.parse_known_args(sys.argv[1:])
+    for x in ('sep','width','hashlength'):
+        if isinstance(getattr(context,x),list):
+            setattr(context,x,getattr(context,x)[0])
+    if context.color<0:
+        if sys.stdout.isatty():
+            context.color=1
+        else:
+            context.color=0
+    return compare(context)
+
+if __name__=='__main__':
+    k=main()
+    sys.stdout=None #i hate that this is necessary but fucking python
+    sys.exit(k)

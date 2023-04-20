@@ -1,0 +1,8 @@
+#!/bin/bash
+
+function hexify() {
+    local target=${1:-/dev/stdin}
+	perl -wpe 's/(0x[0-9A-Fa-f]+)/@{[hex $1]}/g' "$target"
+}
+
+hexify "$@"

@@ -1,0 +1,21 @@
+#!/bin/bash
+
+YTDL=${YTDL:-youtube-dl}
+VS=
+AS=
+
+if [[ "$#" -ne 4 ]]; then
+    echo $0 "<url> <starttime> <duration> <savefile.mkv>"
+    exit 1;
+fi
+
+VS=$($YTDL --youtube-skip-dash-manifest -g $1)
+if [ $? -eq 0 ]; then
+    AS=$(echo "$VS"|sed -ne 2p)
+    VS=$(echo "$VS"|sed -ne 1p)
+
+    ffmpeg -ss $2 -i "$VS" -ss $2 -i "$AS" -t $3 -map 0:v -map 1:a -c:v libx264 -c:a aac $4
+else
+    echo forget execute?
+fi
+

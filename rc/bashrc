@@ -1,0 +1,9 @@
+function xtf() {
+        if echo $PS1|grep -vq netns; then
+                export PS1="ns=$(ip netns id) \[\e]0;\u@\h: \w\a\]${debian_chroot:+($debian_chroot)}\u@\h:\w\$ "
+        fi;
+}
+xtf
+
+function bindsudo() { exec sudo nsenter --net=/run/netns/$1 unshare --mount sh -c 'mount --bind /root/'$1'/resolv.conf /etc/resolv.conf;exec su - '$USER; }
+
