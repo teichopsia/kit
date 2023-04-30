@@ -80,6 +80,51 @@ sub gather_ipvs {
 		}
 	}
 }
+sub gather_slaves {
+	my($int)=@_;
+	my($r)=[$int];
+	if(open(T,"</sys/class/net/${int}/bonding/slaves")) {
+		my $k=<T>;
+		chomp $k;
+		$r=[split(/\s+/,$k)];
+		close T;
+	}
+	return $r;
+}
+{
+	my($tool)=q{?};
+	foreach my $p (qw(/sbin /usr/sbin)) {
+		if(-x "$p/ethtool") {
+			$tool="$p/ethtool";last;
+		}
+	}
+	sub gather_pps {
+		my($int)=@_;
+		my($pps)={'rx'=>undef,'tx'=>undef};
+		foreach my $phy (@{gather_slaves($int)}) {
+			if(open(T,"$tool -S $phy|")) {
+				my($k)={'rx'=>[],'tx'=>[]};
+				while(<T>) {
+					if(/([rt]x)(\d+)_packets: (\d+)/) {
+						my($dir,$q,$v)=($1,$2,$3);
+						push @{$k->{$dir}},$v;
+					}
+				}
+				close T;
+				foreach my $dir (qw(rx tx)) {
+					unless($pps->{$dir}) {
+						$pps->{$dir}=$k->{$dir};
+					} else {
+						for(my $i=0;$i<=$#{$pps->{$dir}};$i++) {
+							$pps->{$dir}[$i]+=$k->{$dir}[$i];
+						}
+					}
+				}
+			}
+		}
+		return ($pps->{'rx'},$pps->{'tx'});
+	}
+}
 
 sub ki{ my($pcivendor,$pcibus,$pcidev,$pcirest)=("?","?","?","?");my($c)=@_;my $r={};my $f=q{/proc/interrupts};if(open(T,"<$f")){<T>;while(<T>){chomp;s/^\s+//;my @z=split(/\s+/,$_,$c+2);next unless scalar @z==$c+2;my $i=substr($z[0],0,-1);
 	if($z[-1]=~/(mlx5[^@]+)\@pci:((\d{4}:\d{2}):\d{2}\.\d+)$/) {
@@ -112,6 +157,13 @@ sub kv{my($c)=@_;my $r={};my $f=q{/proc/interrupts};if(open(T,"<$f")){<T>;while(
 	for(my $j=1;$j<$c+1;$j++){$r->{$j-1}{$i}=$z[$j]}
 };close T};return $r}
 
+{my $release=q{?};
+	$release=(split(/:\s+/,qx{/usr/bin/lsb_release -d}))[-1];
+	chomp($release);
+	sub lsb_release {
+		return $release;
+	}
+}
 sub ncpu{
 	my $r=0;
 	if(open(T,"/usr/bin/lscpu|")){
@@ -205,11 +257,12 @@ my $f="%s\t%s\nCPU:";
 for(my $i=0;$i<$c;$i++) {
 	$f.=sprintf "% 6s",$i;
 }
-$f.="\t\tin\tout\n";
+$f.="\t\tipvs\n";
 
 my $rmin=[(0xffffff)x$c];
 my $rmax=[(0)x$c];
 my @iface=&gather_interface($selected);
+my ($lr,$lt)=&gather_pps($selected);
 for(my $frame=0;;){
 	sleep($d);
 	my $r=kv($c);
@@ -281,11 +334,15 @@ for(my $frame=0;;){
 	}
 	my(@ipvs)=&gather_ipvs;
 	@iface=&gather_interface($selected);
+	my($nr,$nt)=&gather_pps($selected);
 	$p.=sprintf "min:%s",&do_irqsum($c,$rmin);
-	$p.=sprintf "\tipvs:\t%s\t%s\n",$ipvs[0],$ipvs[1];
+	$p.=sprintf "\tin:\t%s\n",$ipvs[0];
 	$p.=sprintf "max:%s",&do_irqsum($c,$rmax);
-	$p.=sprintf "\tpps:\t%s\t%s\n",$iface[0],$iface[1];
-	$p.=sprintf "\nNode: %s\n",&hostname;
-	$p.=sprintf "Version: 2.1.5\n";
+	$p.=sprintf "\tout:\t%s\n",$ipvs[1];
+	$p.=sprintf "prx:%s\t%s\n",join("",map{sprintf("% 6s",$nr->[$_]-$lr->[$_])} 0..($c-1)),$iface[0];
+	$p.=sprintf "ptx:%s\t%s\n",join("",map{sprintf("% 6s",$nt->[$_]-$lt->[$_])} 0..($c-1)),$iface[1];
+	$lr=$nr; $lt=$nt;
+	$p.=sprintf "\nNode: %s (%s)\n",&hostname,&lsb_release;
+	$p.=sprintf "Version: 2.3.2\n";
 	print $p;
 }
