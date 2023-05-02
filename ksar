@@ -1,0 +1,47 @@
+#!/usr/bin/perl -w
+
+#ksar <column> <threshold>
+#ksar '%iowait' 90
+#ksar '%system' 80
+
+use JSON::PP;
+
+if(scalar @ARGV!=2) {
+	print "$0 <sar-column> <threshold>\n";
+	exit 1;
+	}
+my($column,$threshold)=@ARGV;
+my $c=0;
+my $st=q{/var/log/sysstat};
+my $r={};
+if(opendir(my $dh,$st)){
+foreach my $stat (grep { /^sa\d{2}/ } readdir $dh) {
+if(open(T,"sar -f ${st}/${stat} -P ALL|")) {
+my $x=0;
+my $ksi=-1;
+while(<T>){
+	my(@z)=split;
+	if(/Linux.+(\d+) CPU/){$c=$1}
+	my($d)=0;
+	if(!/^$/){
+		if(scalar split(/:/,$z[0])==3){
+			if(!/CPU/){
+				if($z[$ksi]>$threshold){$x++}
+			} else {
+				#columns shift with LC_TIME=C
+				for(my $i=0;$i<=$#z;$i++) {
+					if($z[$i] eq $column) {
+						$ksi=$i;
+					}
+				}
+			}
+		}
+	}
+}
+$r->{$stat}=$x if $x>0;
+} else { print "wat\n"}
+}
+closedir $dh;
+$r->{cpu}=$c+0;
+print encode_json($r);
+}
