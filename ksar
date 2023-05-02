@@ -43,6 +43,6 @@ $r->{$stat}=$x if $x>0;
 }
 closedir $dh;
 $r->{cpu}=$c+0;
-$r->{'current'}=$r->{sprintf "%02d",+(localtime())[3]};
+$r->{'current'}=$r->{sprintf "sa%02d",+(localtime())[3]};
 print encode_json($r);
 }
