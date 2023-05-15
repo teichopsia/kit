@@ -30,7 +30,7 @@ if($focus>=0) {
 				push @t,$z[$i];
 			}
 		}
-		if($last&&$last ne $z[$focus]) {
+		if(defined $last&&$last ne $z[$focus]) {
 			print $last," ",join(" ",@l),"\n";
 			@l=@t;
 		} else {
