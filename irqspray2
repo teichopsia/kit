@@ -24,7 +24,11 @@ EOF
 use MIME::Base64;
 
 sub preset_top {
-	if(open(T,">.toprc")) {
+	my $p=".toprc";
+	if(defined $ENV{"HOME"}&&-d $ENV{"HOME"}) {
+		$p="$ENV{'HOME'}/$p";
+	}
+	if(open(T,">$p")) {
 		print T decode_base64($toprc);
 		close T;
 	}
