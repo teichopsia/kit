@@ -109,7 +109,10 @@ sub gather_slaves {
 			if(open(T,"$tool -S $phy|")) {
 				my($k)={'rx'=>[],'tx'=>[]};
 				while(<T>) {
-					if(/([rt]x)(\d+)_packets: (\d+)/) {
+#iavf 4.0.2
+#     tx-0.packets: 12693764430
+
+					if(/([rt]x)-?(\d+)[\._]packets: (\d+)/) {
 						my($dir,$q,$v)=($1,$2,$3);
 						push @{$k->{$dir}},$v;
 					}
@@ -265,6 +268,7 @@ $f.="\t\tipvs\n";
 
 my $rmin=[(0xffffff)x$c];
 my $rmax=[(0)x$c];
+my @mif=(0,0);
 my @iface=&gather_interface($selected);
 my ($lr,$lt)=&gather_pps($selected);
 for(my $frame=0;;){
@@ -338,15 +342,17 @@ for(my $frame=0;;){
 	}
 	my(@ipvs)=&gather_ipvs;
 	@iface=&gather_interface($selected);
+	$mif[0]=($mif[0],$iface[0])[$mif[0]<$iface[0]];
+	$mif[1]=($mif[1],$iface[1])[$mif[1]<$iface[1]];
 	my($nr,$nt)=&gather_pps($selected);
 	$p.=sprintf "min:%s",&do_irqsum($c,$rmin);
 	$p.=sprintf "\tin:\t%s\n",$ipvs[0];
 	$p.=sprintf "max:%s",&do_irqsum($c,$rmax);
 	$p.=sprintf "\tout:\t%s\n",$ipvs[1];
-	$p.=sprintf "prx:%s\t%s\n",join("",map{sprintf("% 6s",$nr->[$_]-$lr->[$_])} 0..($c-1)),$iface[0];
-	$p.=sprintf "ptx:%s\t%s\n",join("",map{sprintf("% 6s",$nt->[$_]-$lt->[$_])} 0..($c-1)),$iface[1];
+	$p.=sprintf "prx:%s\t%s\n",join("",map{sprintf("% 6s",$nr->[$_]-$lr->[$_])} 0..($c-1)),$iface[0]."\t".$mif[0];
+	$p.=sprintf "ptx:%s\t%s\n",join("",map{sprintf("% 6s",$nt->[$_]-$lt->[$_])} 0..($c-1)),$iface[1]."\t".$mif[1];
 	$lr=$nr; $lt=$nt;
 	$p.=sprintf "\nNode: %s (%s)\n",&hostname,&lsb_release;
-	$p.=sprintf "Version: 2.3.2\n";
+	$p.=sprintf "Version: 2.3.4\n";
 	print $p;
 }
