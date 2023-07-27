@@ -349,10 +349,13 @@ for(my $frame=0;;){
 	$p.=sprintf "\tin:\t%s\n",$ipvs[0];
 	$p.=sprintf "max:%s",&do_irqsum($c,$rmax);
 	$p.=sprintf "\tout:\t%s\n",$ipvs[1];
-	$p.=sprintf "prx:%s\t%s\n",join("",map{sprintf("% 6s",$nr->[$_]-$lr->[$_])} 0..($c-1)),$iface[0]."\t".$mif[0];
-	$p.=sprintf "ptx:%s\t%s\n",join("",map{sprintf("% 6s",$nt->[$_]-$lt->[$_])} 0..($c-1)),$iface[1]."\t".$mif[1];
+	my $chan=scalar(@$nr);
+	$p.=sprintf "prx:%s",join("",map{sprintf("% 6s",$nr->[$_]-$lr->[$_])} 0..($chan-1));
+	$p.=sprintf "%s\t%s\n",join("",map{sprintf("% 6s","")} ($chan)..($c-1)) ,$iface[0]."\t".$mif[0];
+	$p.=sprintf "ptx:%s",join("",map{sprintf("% 6s",$nt->[$_]-$lt->[$_])} 0..($chan-1));
+	$p.=sprintf "%s\t%s\n",join("",map{sprintf("% 6s","")} ($chan)..($c-1)) ,$iface[1]."\t".$mif[1];
 	$lr=$nr; $lt=$nt;
 	$p.=sprintf "\nNode: %s (%s)\n",&hostname,&lsb_release;
-	$p.=sprintf "Version: 2.3.4\n";
+	$p.=sprintf "Version: 2.3.6\n";
 	print $p;
 }
