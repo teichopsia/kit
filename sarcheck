@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+# vim: sts=4 ts=4 sw=4 et ai
+
+import subprocess
+import sys
+import os
+import json
+
+ecl={
+    'EC_MATCH':0,
+    'EC_NOMATCH':1,
+    'EC_NOSAR':253,
+    'EC_USAGE':254,
+    'EC_SYNTAX':255,
+}
+
+def sarcpu(field):
+    r={}
+    try:
+        pos=-1
+        for line in subprocess.check_output('/usr/bin/sar -P ALL'.split(' '),
+            shell=False,env={'LC_TIME':'C'}).decode('UTF-8').splitlines():
+            k=line.split()
+            if len(k)>1 and k[1]=='CPU':
+                for v in range(2,len(k)):
+                    if k[v]==field:
+                        pos=v
+            elif pos>0 and len(k)==8 and k[0][2]==':' and k[1]!='all':
+                r[int(k[1])]=float(k[pos])
+    except FileNotFoundError:
+        r=None
+    return r
+
+def cb_cpu(field,threshold):
+    threshold=float(threshold)
+    k=sarcpu(field)
+    if k:
+        if any(map(lambda x:k[x]<threshold,k)):
+            return ecl['EC_MATCH']
+        return ecl['EC_NOMATCH']
+    else:
+        return ecl['EC_NOSAR']
+
+def cb_cpujson(field):
+    k=sarcpu(field)
+    if k:
+        print(json.dumps(k))
+        return ecl['EC_MATCH']
+    elif k==None:
+        return ecl['EC_NOSAR']
+    else:
+        return ecl['EC_NOMATCH']
+
+def main():
+    #verb-> circuit breaker
+    dispatch={
+        'cpu':[cb_cpu,4,2,4],
+        'cpujson':[cb_cpujson,3,2,3],
+    }
+    if len(sys.argv)>1 and sys.argv[1] in dispatch:
+        bounce=dispatch[sys.argv[1]]
+        if len(sys.argv)==bounce[1]:
+            return bounce[0](*sys.argv[bounce[2]:bounce[3]])
+        else:
+            return ecl['EC_SYNTAX']
+    else:
+        print('usage:')
+        print('\t{0} <mode> <field> [threshold]'.format(os.path.split(sys.argv[0])[-1]))
+        print('')
+        print('\tmode      := <cpu|cpujson>')
+        print('\tfield     := <%idle|...>')
+        print('\tthreshold := <float>')
+        return ecl['EC_USAGE']
+
+if __name__=='__main__':
+    r=main()
+    sys.stdout=None
+    sys.exit(r)
+
