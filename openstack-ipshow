@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+
+import openstack,urllib,os,sys
+
+def main(short=True,debug=False):
+  if debug:
+    openstack.enable_logging(debug=True)
+  conn=openstack.connect()
+  target=sys.argv[1]
+  r=[]
+  r.append('proj dev name interface mac ip gateway nameservers routes'.split(' '))
+  for hit in conn.network.ports(fixed_ips=urllib.parse.urlencode({'ip_address':target})):
+    if hit.device_id != "":
+      for hit2 in conn.network.ports(device_id=hit.device_id):
+        hn=hit2.dns_name or '?'
+        name=hit2.name or '?'
+        mac=hit2.mac_address
+        for xip in hit2.fixed_ips:
+          ip=xip['ip_address']
+          sn=conn.network.find_subnet(xip['subnet_id'])
+          l=sn['cidr'].split('/')[1]
+          px=hit.project_id
+          dx=hit.device_id
+          if short:
+            px='..'+px[-4:]
+            dx='..'+dx[-4:]
+          n=[px,dx,hn,name,mac,ip+'/'+l,sn['gateway_ip'] or '',','.join(sn['dns_nameservers']),' '.join(sn['host_routes'])]
+          r.append(n)
+
+  s=[0] * len(r[0])
+  for row in r:
+    for col,d in enumerate(row):
+      if len(row[col])>s[col]:
+        s[col]=len(row[col])
+
+  for row in r:
+    for col,d in enumerate(row):
+      print('{:<{}s}'.format(d,s[col]),end=' ')
+    print('')
+
+if __name__=='__main__':
+  r=main()
+  sys.stdout=None
+  sys.exit(r)
+
