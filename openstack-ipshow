@@ -7,24 +7,44 @@ def main(short=True,debug=False):
     openstack.enable_logging(debug=True)
   conn=openstack.connect()
   target=sys.argv[1]
+  if target=='-x':
+    short=False
+    target=sys.argv[2]
   r=[]
-  r.append('proj dev name interface mac ip gateway nameservers routes'.split(' '))
+  r.append('proj dev port name interface mac ip gateway nameservers routes sec-on? secgrp secap'.split(' '))
+  def cleanup(x,y):
+    if x:
+      return y.join(x)
+    else:
+      return '-'
   for hit in conn.network.ports(fixed_ips=urllib.parse.urlencode({'ip_address':target})):
     if hit.device_id != "":
       for hit2 in conn.network.ports(device_id=hit.device_id):
         hn=hit2.dns_name or '?'
         name=hit2.name or '?'
         mac=hit2.mac_address
+        sg=','.join(map(lambda x:'..'+x[-4:]+'('+
+          conn.network.get_security_group(x).name+')' if short else x+'('+
+          conn.network.get_security_group(x).name+')',hit2.security_group_ids))
+        secon='no'
+        ap=','.join(map(lambda x:x['ip_address']+'@'+x['mac_address'],hit2.allowed_address_pairs))
+        id=hit2.id
+        if short:
+          id='..'+id[-4:]
+        if hit2.is_port_security_enabled:
+          secon='yes'
         for xip in hit2.fixed_ips:
           ip=xip['ip_address']
           sn=conn.network.find_subnet(xip['subnet_id'])
           l=sn['cidr'].split('/')[1]
+          ns=cleanup(sn['dns_nameservers'],',')
+          hr=cleanup(sn['host_routes'],',')
           px=hit.project_id
           dx=hit.device_id
           if short:
             px='..'+px[-4:]
             dx='..'+dx[-4:]
-          n=[px,dx,hn,name,mac,ip+'/'+l,sn['gateway_ip'] or '',','.join(sn['dns_nameservers']),' '.join(sn['host_routes'])]
+          n=[px,dx,id,hn,name,mac,ip+'/'+l,sn['gateway_ip'] or '',ns,hr,secon,sg,ap]
           r.append(n)
 
   s=[0] * len(r[0])
@@ -42,4 +62,3 @@ if __name__=='__main__':
   r=main()
   sys.stdout=None
   sys.exit(r)
-
