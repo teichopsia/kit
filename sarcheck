@@ -18,14 +18,17 @@ def sarcpu(field):
     r={}
     try:
         pos=-1
-        for line in subprocess.check_output('/usr/bin/sar -P ALL'.split(' '),
-            shell=False,env={'LC_TIME':'C'}).decode('UTF-8').splitlines():
+        for line in subprocess.check_output(
+            '/usr/bin/sar -P ALL -u ALL'.split(' '),
+            shell=False,
+            env={'LC_TIME':'C'}
+        ).decode('UTF-8').splitlines():
             k=line.split()
-            if len(k)>1 and k[1]=='CPU':
+            if pos<0 and len(k)>1 and k[1]=='CPU':
                 for v in range(2,len(k)):
                     if k[v]==field:
                         pos=v
-            elif pos>0 and len(k)==8 and k[0][2]==':' and k[1]!='all':
+            elif pos>0 and len(k)>=pos and k[0][2]==':' and k[1] not in ['CPU','all']:
                 r[int(k[1])]=float(k[pos])
     except FileNotFoundError:
         r=None
