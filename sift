@@ -1,0 +1,25 @@
+#!/bin/bash
+
+function sift() {
+	local section;
+	while getopts ":i:" opt; do
+		case "${opt}" in
+			i)
+				section="$OPTARG"
+			;;
+		esac;
+	done;
+	shift $((OPTIND-1))
+	if [[ -n $section ]]; then
+		for f in "$@"; do
+			local z
+			#sed -ne $(
+			z=$(grep -Hni -- ----- "$f" |
+				awk -F: '{printf "%s",$2;if(++i%2){printf ","}else{printf "p\n"}}'|
+				sed -ne "${section}p")
+			sed -ne $z $f
+		done
+	fi
+}
+
+sift "$@"
