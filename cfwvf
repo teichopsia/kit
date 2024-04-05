@@ -1,0 +1,135 @@
+#!/usr/bin/perl -w
+
+use strict;
+
+sub snap {
+	my($n)=@_;
+	if($n=~/Ethernet address (\S+)/) {
+		return $1;
+	} else {
+		return "?";
+	}
+}
+
+sub parsevpp {
+	my $r={};
+	my $n;
+	my $cdid=undef;
+	while($n=<>) {
+		if($n=~/^(\S+)\s+BondEthernet(\d+).+?Slave-Idx:\s+?(\d+?)\s+?(\d+?)/) {
+			my($did,$i,$a,$b)=($1,$2,$3,$4);
+			$cdid=$did;
+			$n=<>;
+			my($e)=snap($n);
+			$r->{$did}->{'b'}->{$i}->{'p'}->{'i'}=$a;
+			$r->{$did}->{'b'}->{$i}->{'p'}->{'um'}=$e;
+			$r->{$did}->{'b'}->{$i}->{'s'}->{'i'}=$b;
+			$r->{$did}->{'b'}->{$i}->{'s'}->{'um'}=$e;
+		}elsif($n=~/VirtualFunctionEthernet(\S+)\s+(\d+)/) {
+			my($iface,$i)=($1,$2);
+			$n=<>;
+			my($e)=snap($n);
+			$n=<>;
+			if($n=~/pci: device.+?address\s+(\S+)/) {
+				my($bdf)=($1);
+				$r->{$cdid}->{'l'}->{$i}->{'iface'}=$iface;
+				$r->{$cdid}->{'l'}->{$i}->{'lm'}=$e;
+				my(@t)=split(//,$bdf);
+				splice(@t,$#t-1,1);
+				$bdf=join("",@t);
+				$r->{$cdid}->{'l'}->{$i}->{'bdf'}=$bdf;
+			}
+		}
+	}
+	return $r;
+}
+
+sub parsenic {
+	my @r=();
+	if(open(T,'<','/sys/class/net/bond0/bonding/slaves')) {
+		@r=split(' ',<T>);
+		close T;
+	}
+	return @r;
+}
+
+sub parsevf {
+	my($dev)=@_;
+	my($base)=qq{/sys/class/net/${dev}/device};
+	my($r)={};
+	if(opendir(my $t,$base)) {
+		while(readdir $t) {
+			if(/virtfn(\d+)/) {
+				my($vf)=($1);
+				my($bdf)=(split(/\//,readlink($base.'/'.$_)))[1];
+				$r->{$bdf}->{'vf'}=$vf;
+				$r->{$bdf}->{'leg'}=$dev;
+			}
+		}
+		closedir $t;
+	}
+	return $r;
+}
+
+sub parseiplink {
+	my($r)={};
+	my($cif)=undef;
+	if(open(T,'ip link show|')) {
+		while(<T>) {
+			if(/^\d+: (\S+):/) {
+				$cif=$1;
+			}elsif(/^\s+vf\s+(\d+)/) {
+				my($vf)=$1;
+				$r->{$cif}->{$vf}=$_;
+			}
+		}
+		close T;
+	}
+	return $r;
+}
+
+sub main {
+	my $bond={};
+	my $vpp=&parsevpp;
+	foreach my $l (&parsenic) {
+		my($newbond)={%$bond,%{&parsevf($l)}};
+		$bond=$newbond;
+	}
+	my $iplink=&parseiplink;
+	foreach my $container (keys %$vpp) {
+		foreach my $bondi (sort { $a <=> $b } keys %{$vpp->{$container}->{'b'}}) {
+			foreach my $pos ('p','s') {
+				my($p)=$vpp->{$container}->{'b'}->{$bondi}->{$pos};
+				my($leg)=$vpp->{$container}->{'l'}->{$p->{'i'}};
+				my($bdf)=$leg->{'bdf'};
+				my($vf)=$bond->{$bdf}->{'vf'};
+				my($um)=$p->{'um'};
+				my($pf)=$bond->{$bdf}->{'leg'};
+				print join(' ',$container,$pf,'vf',sprintf("% 2s",$vf),$um,
+					$pos eq 'p'?'\\/':'/\\',
+					$leg->{'lm'},$bdf,'BondEthernet'.$bondi,$p->{'i'},
+					'vf'.$leg->{'iface'}
+				),"\n";
+				print $iplink->{$pf}->{$vf};
+			}
+		}
+	}
+}
+&main;
+__DATA__
+649719e18e43 BondEthernet0                      5     up   Slave-Idx: 2 3
+649719e18e43   Ethernet address 01:02:03:04:8c:28
+649719e18e43 BondEthernet1                      6     up   Slave-Idx: 1 4
+649719e18e43   Ethernet address 01:02:03:04:8c:27
+649719e18e43 VirtualFunctionEthernet1/4/7       1    slave VirtualFunctionEthernet1/4/7
+649719e18e43   Ethernet address 01:02:03:04:8c:27
+649719e18e43     pci: device 8086:154c subsystem 15d9:0000 address 0000:01:04.07 numa 0
+649719e18e43 VirtualFunctionEthernet1/5/0       2    slave VirtualFunctionEthernet1/5/0
+649719e18e43   Ethernet address 01:02:03:04:8c:28
+649719e18e43     pci: device 8086:154c subsystem 15d9:0000 address 0000:01:05.00 numa 0
+649719e18e43 VirtualFunctionEthernet1/a/0       3    slave VirtualFunctionEthernet1/a/0
+649719e18e43   Ethernet address 01:02:03:04:8c:28
+649719e18e43     pci: device 8086:154c subsystem 15d9:0000 address 0000:01:0a.00 numa 0
+649719e18e43 VirtualFunctionEthernet1/b/0       4    slave VirtualFunctionEthernet1/b/0
+649719e18e43   Ethernet address 01:02:03:04:8c:27
+649719e18e43     pci: device 8086:154c subsystem 15d9:0000 address 0000:01:0b.00 numa 0
